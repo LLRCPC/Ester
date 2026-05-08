@@ -1,60 +1,88 @@
-import json
+"""
+data_loader.py
+--------------
+Loads cost database from Supabase via direct HTTP.
+No supabase SDK required — uses httpx only.
+Returns same dict shape as the original JSON loader.
+"""
+
 import os
-from pathlib import Path
-
-JSON_PATH = Path(__file__).parent.parent / "data" / "fitout_cost_database_v8.json"
-
-REQUIRED_RATE_FIELDS = {"element_id", "location", "quartile", "rate", "rate_unit"}
-VALID_RATE_UNITS = {"£/m2", "£/ft2"}
+import httpx
+import streamlit as st
 
 
+def _get_credentials() -> tuple[str, str]:
+    url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY", "")
+    if not url or not key:
+        raise EnvironmentError(
+            "SUPABASE_URL and SUPABASE_KEY must be set in .env or "
+            ".streamlit/secrets.toml"
+        )
+    return url, key
+
+
+def _headers(key: str) -> dict:
+    return {
+        "apikey":        key,
+        "Authorization": f"Bearer {key}",
+        "Content-Type":  "application/json",
+    }
+
+
+def _get(url: str, key: str, table: str, params: str = "") -> list:
+    response = httpx.get(
+        f"{url}/rest/v1/{table}?{params}",
+        headers=_headers(key),
+        timeout=15,
+    )
+    if response.status_code != 200:
+        raise RuntimeError(
+            f"Failed to fetch '{table}' [{response.status_code}]: {response.text}"
+        )
+    return response.json()
+
+
+@st.cache_data(ttl=300)
 def load_cost_database() -> dict:
     """
-    Load the V8 cost database from JSON.
-    Excel is never accessed at runtime — use watch_excel.py to keep JSON in sync.
+    Load elements, quantity rules, and current rates from Supabase.
+    Returns the same shape as the original JSON loader.
     """
-    if not JSON_PATH.exists():
-        raise FileNotFoundError(
-            f"Cost database not found at: {JSON_PATH}\n"
-            "Run `python excel_to_json.py` to generate it from Excel."
+    url, key = _get_credentials()
+
+    # Active elements in display order
+    elements = _get(url, key, "elements",
+                    "is_active=eq.true&order=sort_order.asc&select=*")
+
+    # Quantity rules
+    quantity_rules = _get(url, key, "quantity_rules", "select=*")
+
+    # Get current published rate set ID
+    rate_sets = _get(url, key, "rate_sets",
+                     "is_draft=eq.false&superseded_at=is.null"
+                     "&order=published_at.desc&limit=1&select=rate_set_id")
+
+    if not rate_sets:
+        raise ValueError(
+            "No published rate set found in Supabase. "
+            "Check rate_sets table — is_draft must be false."
         )
 
-    with open(JSON_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    rate_set_id = rate_sets[0]["rate_set_id"]
 
-    for key in ("elements", "quantity_rules", "rates"):
-        if key not in data:
-            raise KeyError(f"JSON database is missing required key: '{key}'")
-
-    _validate_rates(data["rates"])
+    # Rates from current rate set only
+    rates = _get(url, key, "rates",
+                 f"rate_set_id=eq.{rate_set_id}&select=*")
 
     return {
-        "elements":       data["elements"],
-        "quantity_rules": data["quantity_rules"],
-        "rates":          data["rates"],
-        "_mtime":         os.path.getmtime(JSON_PATH),  # stored so app can detect changes
+        "elements":       elements,
+        "quantity_rules": quantity_rules,
+        "rates":          rates,
+        "_rate_set_id":   rate_set_id,
     }
 
 
 def get_json_mtime() -> float:
-    """Return the modification time of the JSON file (used to detect updates)."""
-    return os.path.getmtime(JSON_PATH) if JSON_PATH.exists() else 0.0
-
-
-def _validate_rates(rates: list[dict]):
-    for i, row in enumerate(rates):
-        missing = REQUIRED_RATE_FIELDS - set(row.keys())
-        if missing:
-            raise ValueError(f"Rate row {i} is missing fields: {sorted(missing)}")
-
-        rate_unit = row["rate_unit"]
-        if rate_unit not in VALID_RATE_UNITS:
-            raise ValueError(
-                f"Rate row {i} has unsupported rate_unit '{rate_unit}'. "
-                f"Expected one of: {VALID_RATE_UNITS}"
-            )
-
-        if row["rate"] < 0:
-            raise ValueError(
-                f"Rate row {i} ({row['element_id']}) has negative rate: {row['rate']}"
-            )
+    """Legacy shim — app.py calls this. Return 0 now we use Supabase."""
+    return 0.0
