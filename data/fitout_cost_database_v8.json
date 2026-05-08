@@ -1,0 +1,607 @@
+{
+  "meta": {
+    "source_file": "fitout_cost_database_v8.xlsx",
+    "generated_at": "2026-04-27T09:45:10"
+  },
+  "elements": [
+    {
+      "element_id": "REC",
+      "element_name": "Reception Fit-Out",
+      "category": "Public Areas",
+      "area_basis": "GIA",
+      "default_unit_area": "m2",
+      "default_rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "element_name": "WC Fit-Out",
+      "category": "Welfare",
+      "area_basis": "GIA",
+      "default_unit_area": "m2",
+      "default_rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "element_name": "Lift Lobby Fit-Out",
+      "category": "Circulation",
+      "area_basis": "GIA",
+      "default_unit_area": "m2",
+      "default_rate_unit": "£/m2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "element_name": "Cat A – Architectural",
+      "category": "Cat A",
+      "area_basis": "NIA",
+      "default_unit_area": "ft2",
+      "default_rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "element_name": "Cat A - MEP",
+      "category": "Cat A",
+      "area_basis": "NIA",
+      "default_unit_area": "ft2",
+      "default_rate_unit": "£/ft2"
+    }
+  ],
+  "quantity_rules": [
+    {
+      "element_id": "REC",
+      "quantity_method": "percent_gia",
+      "default_pct": 0.015,
+      "unit": "m2"
+    },
+    {
+      "element_id": "WC",
+      "quantity_method": "percent_gia",
+      "default_pct": 0.02,
+      "unit": "m2"
+    },
+    {
+      "element_id": "LOB",
+      "quantity_method": "percent_gia",
+      "default_pct": 0.01,
+      "unit": "m2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "quantity_method": "percent_area",
+      "default_pct": 1.0,
+      "unit": "ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "quantity_method": "percent_area",
+      "default_pct": 1.0,
+      "unit": "ft2"
+    }
+  ],
+  "rates": [
+    {
+      "element_id": "REC",
+      "location": "London",
+      "quartile": "Min",
+      "rate": 330,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "London",
+      "quartile": "Low quart",
+      "rate": 1695,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "London",
+      "quartile": "Median",
+      "rate": 2284,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "London",
+      "quartile": "Upper quart",
+      "rate": 2853,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "London",
+      "quartile": "Max",
+      "rate": 7262,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Birmingham",
+      "quartile": "Min",
+      "rate": 250,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Birmingham",
+      "quartile": "Low quart",
+      "rate": 800,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Birmingham",
+      "quartile": "Median",
+      "rate": 1250,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Birmingham",
+      "quartile": "Upper quart",
+      "rate": 1800,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Birmingham",
+      "quartile": "Max",
+      "rate": 3000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Manchester",
+      "quartile": "Min",
+      "rate": 300,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Manchester",
+      "quartile": "Low quart",
+      "rate": 1000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Manchester",
+      "quartile": "Median",
+      "rate": 1500,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Manchester",
+      "quartile": "Upper quart",
+      "rate": 2000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "REC",
+      "location": "Manchester",
+      "quartile": "Max",
+      "rate": 4000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "London",
+      "quartile": "Min",
+      "rate": 1452,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "London",
+      "quartile": "Low quart",
+      "rate": 2231,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "London",
+      "quartile": "Median",
+      "rate": 2990,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "London",
+      "quartile": "Upper quart",
+      "rate": 3490,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "London",
+      "quartile": "Max",
+      "rate": 4852,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Birmingham",
+      "quartile": "Min",
+      "rate": 1000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Birmingham",
+      "quartile": "Low quart",
+      "rate": 1500,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Birmingham",
+      "quartile": "Median",
+      "rate": 2000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Birmingham",
+      "quartile": "Upper quart",
+      "rate": 3000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Birmingham",
+      "quartile": "Max",
+      "rate": 4000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Manchester",
+      "quartile": "Min",
+      "rate": 1200,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Manchester",
+      "quartile": "Low quart",
+      "rate": 1500,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Manchester",
+      "quartile": "Median",
+      "rate": 2200,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Manchester",
+      "quartile": "Upper quart",
+      "rate": 3000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "WC",
+      "location": "Manchester",
+      "quartile": "Max",
+      "rate": 4000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "London",
+      "quartile": "Min",
+      "rate": 100,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "London",
+      "quartile": "Low quart",
+      "rate": 570,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "London",
+      "quartile": "Median",
+      "rate": 1002,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "London",
+      "quartile": "Upper quart",
+      "rate": 1599,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "London",
+      "quartile": "Max",
+      "rate": 5632,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Birmingham",
+      "quartile": "Min",
+      "rate": 100,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Birmingham",
+      "quartile": "Low quart",
+      "rate": 200,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Birmingham",
+      "quartile": "Median",
+      "rate": 300,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Birmingham",
+      "quartile": "Upper quart",
+      "rate": 400,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Birmingham",
+      "quartile": "Max",
+      "rate": 500,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Manchester",
+      "quartile": "Min",
+      "rate": 100,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Manchester",
+      "quartile": "Low quart",
+      "rate": 250,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Manchester",
+      "quartile": "Median",
+      "rate": 500,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Manchester",
+      "quartile": "Upper quart",
+      "rate": 750,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "LOB",
+      "location": "Manchester",
+      "quartile": "Max",
+      "rate": 1000,
+      "rate_unit": "£/m2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "London",
+      "quartile": "Min",
+      "rate": 8,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "London",
+      "quartile": "Low quart",
+      "rate": 13,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "London",
+      "quartile": "Median",
+      "rate": 15,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "London",
+      "quartile": "Upper quart",
+      "rate": 20,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "London",
+      "quartile": "Max",
+      "rate": 40,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Birmingham",
+      "quartile": "Min",
+      "rate": 8,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Birmingham",
+      "quartile": "Low quart",
+      "rate": 12,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Birmingham",
+      "quartile": "Median",
+      "rate": 14,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Birmingham",
+      "quartile": "Upper quart",
+      "rate": 16,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Birmingham",
+      "quartile": "Max",
+      "rate": 20,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Manchester",
+      "quartile": "Min",
+      "rate": 8,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Manchester",
+      "quartile": "Low quart",
+      "rate": 12,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Manchester",
+      "quartile": "Median",
+      "rate": 14,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Manchester",
+      "quartile": "Upper quart",
+      "rate": 16,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_ARCH",
+      "location": "Manchester",
+      "quartile": "Max",
+      "rate": 20,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "London",
+      "quartile": "Min",
+      "rate": 27,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "London",
+      "quartile": "Low quart",
+      "rate": 27,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "London",
+      "quartile": "Median",
+      "rate": 40,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "London",
+      "quartile": "Upper quart",
+      "rate": 50,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "London",
+      "quartile": "Max",
+      "rate": 60,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Birmingham",
+      "quartile": "Min",
+      "rate": 20,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Birmingham",
+      "quartile": "Low quart",
+      "rate": 25,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Birmingham",
+      "quartile": "Median",
+      "rate": 30,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Birmingham",
+      "quartile": "Upper quart",
+      "rate": 35,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Birmingham",
+      "quartile": "Max",
+      "rate": 40,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Manchester",
+      "quartile": "Min",
+      "rate": 20,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Manchester",
+      "quartile": "Low quart",
+      "rate": 25,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Manchester",
+      "quartile": "Median",
+      "rate": 30,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Manchester",
+      "quartile": "Upper quart",
+      "rate": 35,
+      "rate_unit": "£/ft2"
+    },
+    {
+      "element_id": "CAT_A_MEP",
+      "location": "Manchester",
+      "quartile": "Max",
+      "rate": 40,
+      "rate_unit": "£/ft2"
+    }
+  ]
+}

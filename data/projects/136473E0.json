@@ -1,0 +1,18 @@
+{
+  "project_id": "136473E0",
+  "project_name": "100 wood street ",
+  "postcode": "EC2V 7ER",
+  "gia_m2": 9290.30399999976,
+  "nia_m2": 6503.212799999832,
+  "location": "London",
+  "quartile": "Median",
+  "element_areas_m2": {
+    "REC": 300.0,
+    "WC": 213.67699199999447,
+    "LOB": 200.0,
+    "CAT_A_ARCH": 6503.212799999832,
+    "CAT_A_MEP": 6503.212799999832
+  },
+  "total_cost": 5374494.0,
+  "saved_at": "2026-04-27T16:32:16"
+}
