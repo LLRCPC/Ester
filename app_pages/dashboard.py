@@ -19,7 +19,7 @@ def _restore_project(project_id: str):
     st.session_state.quartile         = data.get("quartile", "Median")
     st.session_state.element_areas_m2 = data.get("element_areas_m2", {})
     st.session_state._last_total_cost  = data.get("total_cost", 0)
-    st.session_state.page_idx = 3   # jump straight to Breakdown
+    st.session_state.page_idx = 4   # Cost Breakdown is now page 4
 
 
 def render(db: dict):
@@ -58,7 +58,11 @@ def render(db: dict):
         [col_h1, col_h2, col_h3, col_h4, col_h5],
         ["Project", "Location", "Total Cost", "", ""]
     ):
-        col.markdown(f'<span style="font-size:0.75rem;letter-spacing:0.06em;text-transform:uppercase;color:#8a96a8;">{label}</span>', unsafe_allow_html=True)
+        col.markdown(
+            f'<span style="font-size:0.75rem;letter-spacing:0.06em;'
+            f'text-transform:uppercase;color:#8a96a8;">{label}</span>',
+            unsafe_allow_html=True
+        )
 
     st.markdown('<div style="height:4px"></div>', unsafe_allow_html=True)
 
@@ -66,8 +70,8 @@ def render(db: dict):
         col1, col2, col3, col4, col5 = st.columns([4, 2, 2, 1, 1])
 
         with col1:
-            gia_str  = f"{proj['gia_m2']:,.0f} m²" if proj.get("gia_m2") else "—"
-            saved    = proj["saved_at"][:10] if proj.get("saved_at") else ""
+            gia_str = f"{proj['gia_m2']:,.0f} m²" if proj.get("gia_m2") else "—"
+            saved   = proj["saved_at"][:10] if proj.get("saved_at") else ""
             st.markdown(f"""
             <div class="proj-card">
                 <div class="proj-title">{proj.get("project_name") or "Untitled"}</div>

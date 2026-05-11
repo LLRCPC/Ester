@@ -30,7 +30,7 @@ def render(db: dict):
     if all_zero:
         st.warning("⚠️ No element areas entered — go back to Element Areas.")
         if st.button("← Element Areas"):
-            st.session_state.page_idx = 2
+            st.session_state.page_idx = 3  # Element Areas is now page 3
             st.rerun()
         return
 
@@ -53,7 +53,6 @@ def render(db: dict):
     total_cost = result["total_cost"]
     elements   = result["elements"]
 
-    # Store for save page
     st.session_state["_last_total_cost"] = total_cost
 
     # ── Unit toggle ──────────────────────────────────
@@ -110,17 +109,17 @@ def render(db: dict):
                 rate_d = convert_rate(el["rate_gbp_m2"], "£/m2", "£/ft2")
 
             rows.append({
-                "Element":      el["element_name"],
-                area_col:       f"{area_d:,.0f}",
-                rate_col:       f"£{rate_d:,.2f}",
-                "Total Cost":   f"£{el['total_cost']:,.0f}",
+                "Element":    el["element_name"],
+                area_col:     f"{area_d:,.0f}",
+                rate_col:     f"£{rate_d:,.2f}",
+                "Total Cost": f"£{el['total_cost']:,.0f}",
             })
             all_rows.append({
-                "Category":         category,
-                "Element":          el["element_name"],
-                area_col:           round(area_d, 0),
-                rate_col:           round(rate_d, 2),
-                "Total Cost (£)":   el["total_cost"],
+                "Category":       category,
+                "Element":        el["element_name"],
+                area_col:         round(area_d, 0),
+                rate_col:         round(rate_d, 2),
+                "Total Cost (£)": el["total_cost"],
             })
 
         pct = (cat_total / total_cost * 100) if total_cost > 0 else 0
@@ -159,9 +158,9 @@ def render(db: dict):
     col_back, col_spacer3, col_next = st.columns([1, 4, 1])
     with col_back:
         if st.button("← Element Areas", use_container_width=True):
-            st.session_state.page_idx = 2
+            st.session_state.page_idx = 3  # back to Element Areas
             st.rerun()
     with col_next:
         if st.button("Save Project →", type="primary", use_container_width=True):
-            st.session_state.page_idx = 4
+            st.session_state.page_idx = 5  # forward to Save Project
             st.rerun()

@@ -4,7 +4,7 @@ from engine.session_helpers import new_project, PAGES
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Cost Planner",
+    page_title="Ester",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -75,25 +75,33 @@ hr{border-color:var(--border)!important;margin:1.5rem 0!important;}
 # ── Session: initialise once ──────────────────────────────────────────────────
 if "initialised" not in st.session_state:
     st.session_state.update({
-        "authenticated": False,
-        "page_idx":      0,
-        "project_id":    None,
-        "project_name":  "",
-        "gia_m2":        0.0,
-        "nia_m2":        0.0,
-        "location":      "",
-        "quartile":      "Median",
-        "element_areas_m2": {},
-        "breakdown_unit":   "m²",
-        "_last_total_cost": 0,
+        "authenticated":          False,
+        "page_idx":               0,
+        "project_id":             None,
+        "project_name":           "",
+        "gia_m2":                 0.0,
+        "nia_m2":                 0.0,
+        "location":               "",
+        "quartile":               "Median",
+        "element_areas_m2":       {},
+        "breakdown_unit":         "m²",
+        "_last_total_cost":       0,
+        # Building extension defaults
+        "ext_existing_storeys":   8,
+        "ext_gia_per_floor_m2":   900.0,
+        "ext_nia_per_floor_m2":   720.0,
+        "ext_new_storeys":        0,
+        "ext_new_gia_m2":         900.0,
+        "ext_new_nia_m2":         720.0,
+        "ext_lifts":              4,
+        "ext_stairs":             2,
+        "ext_roof_works":         False,
+        "ext_structural_storeys": 0,
     })
     st.session_state.initialised = True
 
 # ═════════════════════════════════════════════════════════════════════════════
 # LOGIN GATE
-# Change APP_PASSWORD below to whatever password you want.
-# For a multi-user setup in future, this is where you'd integrate a proper
-# auth library such as streamlit-authenticator.
 # ═════════════════════════════════════════════════════════════════════════════
 
 APP_PASSWORD = "CPC2026"   # ← change this
@@ -102,7 +110,6 @@ if not st.session_state.authenticated:
 
     from pathlib import Path
 
-    # Hide sidebar and hamburger menu
     st.markdown("""
     <style>
     [data-testid="stSidebar"] { display: none !important; }
@@ -110,23 +117,16 @@ if not st.session_state.authenticated:
     </style>
     """, unsafe_allow_html=True)
 
-    # Logo
-    # Centre the logo using columns
     logo_path = Path("assets/CPC_logo.png")
-
     logo_col1, logo_col2, logo_col3 = st.columns([1, 1.2, 1])
-
     with logo_col2:
         if logo_path.exists():
             st.image(str(logo_path), use_container_width=True)
 
-    # Title
     st.markdown(
         "<h2 style='text-align:center;margin-bottom:0;'>Construction Project Configurator</h2>",
         unsafe_allow_html=True
     )
-
-    # Subtitle
     st.markdown(
         "<p style='text-align:center;font-size:0.85rem;"
         "color:#8a96a8;letter-spacing:0.08em;text-transform:uppercase;'>"
@@ -134,9 +134,7 @@ if not st.session_state.authenticated:
         unsafe_allow_html=True
     )
 
-    # Login box layout
     col1, col2, col3 = st.columns([1, 2, 1])
-
     with col2:
         pwd = st.text_input(
             "Password",
@@ -144,7 +142,6 @@ if not st.session_state.authenticated:
             label_visibility="collapsed",
             placeholder="Enter password"
         )
-
         if st.button("Sign In", type="primary", use_container_width=True):
             if pwd == APP_PASSWORD:
                 st.session_state.authenticated = True
@@ -155,7 +152,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 
-# ── Load DB (only reached after login) ───────────────────────────────────────
+# ── Load DB ───────────────────────────────────────────────────────────────────
 @st.cache_data
 def load_db(mtime: float):
     return load_cost_database()
@@ -163,21 +160,19 @@ def load_db(mtime: float):
 try:
     db = load_db(get_json_mtime())
 except FileNotFoundError as e:
-    st.error(f"**Cost database not found.**\n\n{e}\n\nRun `python excel_to_json.py` first.")
+    st.error(f"**Cost database not found.**\n\n{e}")
     st.stop()
 except (KeyError, ValueError) as e:
     st.error(f"**Cost database is invalid:** {e}")
     st.stop()
 
-PAGE_ICONS = ["🏠", "📋", "⚙️", "📊", "💾"]
+# ── Page definitions ──────────────────────────────────────────────────────────
+PAGE_ICONS = ["🏠", "📋", "🏗️", "⚙️", "📊", "💾"]
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
 
-    # Logo — replace the HTML block with st.image("assets/logo.png", width=130)
-    # once you have a logo file in the assets/ folder
     from pathlib import Path
-
     logo_path = Path("assets/CPC_logo.png")
     if logo_path.exists():
         st.image(str(logo_path), width=130)
@@ -194,8 +189,6 @@ with st.sidebar:
 
     st.markdown("---")
 
-
-    # Navigation radio
     plain_labels = [f"{PAGE_ICONS[i]}  {PAGES[i]}" for i in range(len(PAGES))]
     selected = st.radio("nav", plain_labels, index=st.session_state.page_idx,
                         label_visibility="collapsed")
@@ -206,10 +199,6 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # ── Project summary (single block, no duplication) ────────────────────────
-    # FIX: removed the second "New Project" button from here.
-    # "New Project" lives only on the Dashboard page (page 0).
-    # This block shows a clean read-only project summary.
     has_project = bool(st.session_state.project_name or st.session_state.location)
     if has_project:
         summary_parts = []
@@ -222,10 +211,8 @@ with st.sidebar:
             summary_parts.append(f'<div>📍 {st.session_state.location}</div>')
         if st.session_state.quartile:
             summary_parts.append(f'<div>📊 {st.session_state.quartile}</div>')
-        # GIA in m²
         if st.session_state.gia_m2 > 0:
             summary_parts.append(f'<div>GIA: {st.session_state.gia_m2:,.0f} m²</div>')
-        # NIA in ft²
         if st.session_state.nia_m2 > 0:
             from engine.unit_engine import convert_area
             nia_ft2 = convert_area(st.session_state.nia_m2, "m2", "ft2")
@@ -237,7 +224,6 @@ with st.sidebar:
         )
         st.markdown("---")
 
-    # Sign out
     if st.button("Sign Out", use_container_width=True):
         st.session_state.authenticated = False
         st.rerun()
@@ -261,8 +247,10 @@ if idx == 0:
 elif idx == 1:
     from app_pages.project_setup import render; render()
 elif idx == 2:
-    from app_pages.elements import render; render(db)
+    from app_pages.building_extension import render; render()
 elif idx == 3:
-    from app_pages.breakdown import render; render(db)
+    from app_pages.elements import render; render(db)
 elif idx == 4:
+    from app_pages.breakdown import render; render(db)
+elif idx == 5:
     from app_pages.save_project import render; render(db)

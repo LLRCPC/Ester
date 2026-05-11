@@ -70,14 +70,13 @@ def render(db: dict):
 
             # ── Element classification ────────────────
             is_cat_a = element.get("area_basis") == "NIA"
-            is_public_area = not is_cat_a  # public / welfare / circulation
 
             st.session_state.element_areas_m2.setdefault(element_id, 0.0)
             st.session_state.element_initialised.setdefault(element_id, False)
 
             rate = _get_rate(db, element_id, location, quartile)
 
-            # ── ONE‑TIME Cat A DEFAULT (100% NIA) ──────
+            # ── ONE-TIME Cat A DEFAULT (100% NIA) ──────
             if (
                 is_cat_a
                 and nia_m2 > 0
@@ -99,7 +98,6 @@ def render(db: dict):
                 with col_input:
                     mode_key = f"{element_id}_mode"
 
-                    # ── Default input mode ─────────────────
                     if is_cat_a:
                         st.session_state.setdefault(mode_key, "NIA default")
                         modes = ["NIA default", "Manual area"]
@@ -114,7 +112,6 @@ def render(db: dict):
                         key=mode_key,
                     )
 
-                    # ── Cat A: NIA default ────────────────
                     if mode == "NIA default":
                         if nia_m2 <= 0:
                             st.warning("Enter NIA on the Project Setup page.")
@@ -123,7 +120,6 @@ def render(db: dict):
                                 f"→ {convert_area(nia_m2, 'm2', 'ft2'):,.0f} ft² (100% of NIA)"
                             )
 
-                    # ── Public areas: % of GIA ────────────
                     elif mode == "% of GIA":
                         pct_key = f"{element_id}_pct"
                         pct = st.number_input(
@@ -134,13 +130,11 @@ def render(db: dict):
                             format="%.1f",
                             key=pct_key,
                         )
-
                         if pct > 0 and gia_m2 > 0:
                             st.session_state.element_areas_m2[element_id] = (
                                 gia_m2 * (pct / 100)
                             )
 
-                    # ── Manual override ───────────────────
                     else:
                         unit_key = f"{element_id}_unit"
                         st.session_state.setdefault(unit_key, "m²")
@@ -172,7 +166,6 @@ def render(db: dict):
                             else convert_area(entered, "ft2", "m2")
                         )
 
-                # ── Cost preview ───────────────────────
                 with col_cost:
                     area_m2 = st.session_state.element_areas_m2[element_id]
 
@@ -191,27 +184,21 @@ def render(db: dict):
 
     with col_a:
         st.metric("Subtotal", f"£{running_total:,.0f}")
-
     with col_b:
         if gia_m2 > 0 and running_total > 0:
             st.metric("Rate / m² GIA", f"£{running_total / gia_m2:,.0f}")
-
     with col_c:
-        n_entered = sum(
-            v > 0 for v in st.session_state.element_areas_m2.values()
-        )
+        n_entered = sum(v > 0 for v in st.session_state.element_areas_m2.values())
         st.metric("Elements entered", f"{n_entered} of {len(db['elements'])}")
 
     # ── Navigation ──────────────────────────────────
-    any_entered = any(
-        v > 0 for v in st.session_state.element_areas_m2.values()
-    )
+    any_entered = any(v > 0 for v in st.session_state.element_areas_m2.values())
 
     col_back, col_spacer, col_next = st.columns([1, 4, 1])
 
     with col_back:
-        if st.button("← Project Setup", use_container_width=True):
-            st.session_state.page_idx = 1
+        if st.button("← Building Config", use_container_width=True):
+            st.session_state.page_idx = 2  # back to Building Configuration
             st.rerun()
 
     with col_next:
@@ -221,7 +208,7 @@ def render(db: dict):
             type="primary",
             use_container_width=True,
         ):
-            st.session_state.page_idx = 3
+            st.session_state.page_idx = 4  # forward to Cost Breakdown
             st.rerun()
 
     if not any_entered:

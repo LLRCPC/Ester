@@ -27,28 +27,20 @@ def render(db: dict):
     with col1:
         st.subheader("Project Details")
 
-        # ── Project name ───────────────────────────────────
         # IMPORTANT: do NOT use key="project_name" here.
         # That key is owned by the text_input widget on project_setup.py.
-        # Using it on a second page causes Streamlit to re-initialise it
-        # to an empty string on first render, silently wiping what the user typed.
-        #
-        # Instead: read the current value from session state before rendering,
-        # pass it as value=, and write any edit back manually.
         current_name = st.session_state.get("project_name", "")
 
         edited_name = st.text_input(
             "Project Name",
             value=current_name,
             help="Pre-filled from Project Setup. Rename here if needed before saving.",
-            key="save_project_name_input",   # ← unique key, never used elsewhere
+            key="save_project_name_input",
         )
 
-        # Sync edits back to session state
         if edited_name != current_name:
             st.session_state["project_name"] = edited_name
 
-        # Show location detail
         if postcode and location:
             st.caption(f"📍 {postcode}  ({location})  ·  {quartile}")
         elif location:
@@ -71,7 +63,6 @@ def render(db: dict):
 
     st.markdown("---")
 
-    # Use the live (possibly just-edited) name from session state
     save_name = st.session_state.get("project_name", "")
     can_save  = bool(save_name and location)
 
@@ -108,7 +99,7 @@ def render(db: dict):
     col_back, col_spacer2, col_dash = st.columns([1, 4, 1])
     with col_back:
         if st.button("← Breakdown", use_container_width=True):
-            st.session_state.page_idx = 3
+            st.session_state.page_idx = 4  # back to Cost Breakdown
             st.rerun()
     with col_dash:
         if st.button("🏠 Dashboard", use_container_width=True):
