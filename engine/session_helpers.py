@@ -21,26 +21,42 @@ def new_project():
     Preserves app-level state (unit_system, area_unit).
     """
     defaults = {
+        # Project identity
         "project_id":             None,
         "project_name":           "",
         "postcode":               "",
-        "gia_m2":                 0.0,
-        "nia_m2":                 0.0,
         "location":               "",
         "quartile":               "Median",
-        "element_areas_m2":       {},
-        "_last_total_cost":       0,
-        # Building extension resets
-        "ext_existing_storeys":   8,
-        "ext_gia_per_floor_m2":   900.0,
-        "ext_nia_per_floor_m2":   720.0,
+        "fitout_scope":           "Whole building",
+
+        # Areas
+        "gia_m2":                 0.0,
+        "nia_m2":                 0.0,
+        "net_gross_pct":          0.0,
+
+        # Storeys — entered on project setup, read by building configuration
+        "storeys_above":          0,
+        "storeys_below":          0,
+
+        # Building extension page
+        "ext_existing_storeys":   0,
+        "ext_gia_per_floor_m2":   0.0,
+        "ext_nia_per_floor_m2":   0.0,
         "ext_new_storeys":        0,
-        "ext_new_gia_m2":         900.0,
-        "ext_new_nia_m2":         720.0,
-        "ext_lifts":              4,
-        "ext_stairs":             2,
+        "ext_new_gia_m2":         0.0,
+        "ext_new_nia_m2":         0.0,
+        "ext_lifts":              0,
+        "ext_stairs":             0,
         "ext_roof_works":         False,
         "ext_structural_storeys": 0,
+
+        # Cost
+        "element_areas_m2":       {},
+        "_last_total_cost":       0,
+
+        # Postcode UI state
+        "postcode_touched":       False,
+        "_postcode_error":        "",
     }
     for k, v in defaults.items():
         st.session_state[k] = v
@@ -51,11 +67,7 @@ def new_project():
             del st.session_state[key]
         elif key.endswith("_area_input"):
             del st.session_state[key]
-        elif key == "_nia_ft2_input":
-            del st.session_state[key]
-        elif key == "save_project_name_input":
-            del st.session_state[key]
-        elif key == "element_initialised":
+        elif key in ("_nia_ft2_input", "save_project_name_input", "element_initialised"):
             del st.session_state[key]
 
     st.session_state.page_idx = 1

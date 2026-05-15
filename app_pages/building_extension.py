@@ -1,37 +1,52 @@
 """
 building_extension.py
 ---------------------
-Page 2: Building Extension (sits between Project Setup and Element Areas)
+Page 2: Building Configuration (sits between Project Setup and Element Areas)
 
 Allows user to define existing building and any proposed vertical extension.
+Existing storeys default from Project Setup inputs.
 Outputs feed directly into session state GIA / NIA used by Element Areas.
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 from engine.unit_engine import convert_area
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
-M2_TO_FT2 = 10.76391041671
-
-
 def _init_defaults():
-    """Initialise all extension-related session state keys once."""
-    defaults = {
-        "ext_existing_storeys":  8,
-        "ext_gia_per_floor_m2":  900.0,
-        "ext_nia_per_floor_m2":  720.0,
-        "ext_new_storeys":       0,
-        "ext_new_gia_m2":        900.0,
-        "ext_new_nia_m2":        720.0,
-        "ext_lifts":             4,
-        "ext_stairs":            2,
-        "ext_roof_works":        False,
-        "ext_structural_storeys": 0,
-    }
-    for k, v in defaults.items():
-        st.session_state.setdefault(k, v)
+    """
+    Initialise building extension session state.
+    Existing storeys default to what was entered on Project Setup.
+    Per-floor areas default to GIA/NIA divided by storeys if available.
+    """
+    # ext_existing_storeys defaults to storeys_above from project setup
+    if "ext_existing_storeys" not in st.session_state:
+        above = st.session_state.get("storeys_above", 0)
+        below = st.session_state.get("storeys_below", 0)
+        st.session_state["ext_existing_storeys"] = above + below
+
+    # Per-floor GIA defaults to total GIA / storeys if available
+    if "ext_gia_per_floor_m2" not in st.session_state:
+        total_gia = st.session_state.get("gia_m2", 0.0)
+        storeys   = st.session_state.get("ext_existing_storeys", 1)
+        st.session_state["ext_gia_per_floor_m2"] = (
+            round(total_gia / storeys, 0) if total_gia > 0 and storeys > 0 else 0.0
+        )
+
+    # Per-floor NIA defaults to total NIA / storeys if available
+    if "ext_nia_per_floor_m2" not in st.session_state:
+        total_nia = st.session_state.get("nia_m2", 0.0)
+        storeys   = st.session_state.get("ext_existing_storeys", 1)
+        st.session_state["ext_nia_per_floor_m2"] = (
+            round(total_nia / storeys, 0) if total_nia > 0 and storeys > 0 else 0.0
+        )
+
+    st.session_state.setdefault("ext_new_storeys",        0)
+    st.session_state.setdefault("ext_new_gia_m2",         st.session_state.get("ext_gia_per_floor_m2", 0.0))
+    st.session_state.setdefault("ext_new_nia_m2",         st.session_state.get("ext_nia_per_floor_m2", 0.0))
+    st.session_state.setdefault("ext_lifts",              0)
+    st.session_state.setdefault("ext_stairs",             0)
+    st.session_state.setdefault("ext_roof_works",         False)
+    st.session_state.setdefault("ext_structural_storeys", 0)
 
 
 def _calculate(unit: str) -> dict:
@@ -68,79 +83,122 @@ def _calculate(unit: str) -> dict:
     }
 
 
-def _building_svg(existing: int, new: int, roof: bool) -> str:
+def _building_svg(existing: int, new: int, below: int, roof: bool) -> str:
     """
     Generate an SVG of the building.
-    Existing floors = blue, new floors = red, roof = green triangle.
-    Max 24 floors shown visually; label shown if more.
+    Below-ground floors = grey, existing above = blue,
+    new floors = red, roof = green triangle.
+    Max 24 floors shown visually.
     """
-    total     = existing + new
-    max_vis   = 24
-    vis_total = min(total, max_vis)
-    vis_ex    = min(existing, max_vis - min(new, max_vis))
-    vis_new   = vis_total - vis_ex
+    total_above = existing
+    total_all   = existing + new
+    max_vis     = 24
 
-    W, H      = 220, 420
-    bw        = 110
-    floor_h   = min(28, max(10, (H - 80) // max(vis_total, 1)))
-    build_h   = floor_h * vis_total
-    sx        = (W - bw) // 2
-    sy        = H - 50 - build_h
+    # How many we can show
+    vis_total = min(total_all + below, max_vis)
+    vis_below = min(below, max_vis)
+    vis_above_existing = min(existing, max_vis - vis_below)
+    vis_new   = min(new, max_vis - vis_below - vis_above_existing)
+
+    W, H    = 220, 460
+    bw      = 110
+    floor_h = min(28, max(10, (H - 80) // max(vis_total, 1)))
+    build_h = floor_h * vis_total
+    sx      = (W - bw) // 2
+
+    # Ground line sits above below-ground floors
+    ground_y = H - 50 - (floor_h * vis_below)
+    sy       = ground_y - (floor_h * (vis_above_existing + vis_new))
 
     floors_svg = ""
-    for i in range(vis_total):
-        is_new = i >= vis_ex
-        y      = sy + (vis_total - 1 - i) * floor_h
-        fill   = "#F09595" if is_new else "#B5D4F4"
-        stroke = "#A32D2D" if is_new else "#185FA5"
-        label  = f"L{i + 1}"
-        text   = ""
-        if floor_h >= 16:
-            text = (
-                f'<text x="{sx + 5}" y="{y + floor_h - 5}" '
-                f'font-size="9" fill="#444" font-family="sans-serif">'
-                f'{label}</text>'
-            )
+
+    # New floors (top)
+    for i in range(vis_new):
+        floor_num = vis_above_existing + i
+        y = sy + (vis_above_existing + vis_new - 1 - i) * floor_h
         floors_svg += (
             f'<rect x="{sx}" y="{y}" width="{bw}" height="{floor_h - 1}" '
-            f'fill="{fill}" stroke="{stroke}" stroke-width="0.5"/>{text}'
+            f'fill="#F09595" stroke="#A32D2D" stroke-width="0.5"/>'
         )
+        if floor_h >= 16:
+            floors_svg += (
+                f'<text x="{sx + 5}" y="{y + floor_h - 5}" '
+                f'font-size="9" fill="#7a1a1a" font-family="sans-serif">'
+                f'L{floor_num + 1} (new)</text>'
+            )
 
+    # Existing above-ground floors
+    for i in range(vis_above_existing):
+        y = sy + (vis_above_existing - 1 - i) * floor_h
+        floors_svg += (
+            f'<rect x="{sx}" y="{y}" width="{bw}" height="{floor_h - 1}" '
+            f'fill="#B5D4F4" stroke="#185FA5" stroke-width="0.5"/>'
+        )
+        if floor_h >= 16:
+            floors_svg += (
+                f'<text x="{sx + 5}" y="{y + floor_h - 5}" '
+                f'font-size="9" fill="#0c2e5c" font-family="sans-serif">'
+                f'L{i + 1}</text>'
+            )
+
+    # Below-ground floors
+    for i in range(vis_below):
+        y = ground_y + i * floor_h
+        floors_svg += (
+            f'<rect x="{sx}" y="{y}" width="{bw}" height="{floor_h - 1}" '
+            f'fill="#D0CEC8" stroke="#888780" stroke-width="0.5"/>'
+        )
+        if floor_h >= 16:
+            floors_svg += (
+                f'<text x="{sx + 5}" y="{y + floor_h - 5}" '
+                f'font-size="9" fill="#555" font-family="sans-serif">'
+                f'B{i + 1}</text>'
+            )
+
+    # Roof
     roof_svg = ""
-    if roof and vis_total > 0:
+    if roof and (vis_above_existing + vis_new) > 0:
         ry = sy - 18
         roof_svg = (
             f'<polygon points="{sx - 8},{sy} {sx + bw // 2},{ry} {sx + bw + 8},{sy}" '
             f'fill="#97C459" stroke="#3B6D11" stroke-width="0.5"/>'
         )
 
+    # Overflow label
     overflow_label = ""
-    if total > max_vis:
+    total_vis_count = vis_below + vis_above_existing + vis_new
+    actual_total = below + total_all
+    if actual_total > max_vis:
         overflow_label = (
-            f'<text x="{W // 2}" y="{sy - 24}" text-anchor="middle" '
+            f'<text x="{W // 2}" y="{sy - 26}" text-anchor="middle" '
             f'font-size="9" fill="#888" font-family="sans-serif">'
-            f'{total} storeys total — showing {max_vis}</text>'
+            f'{actual_total} storeys total — showing {max_vis}</text>'
         )
 
-    ground = (
-        f'<rect x="{sx - 20}" y="{H - 44}" width="{bw + 40}" height="8" fill="#888"/>'
-        f'<text x="{W // 2}" y="{H - 28}" text-anchor="middle" '
-        f'font-size="10" fill="#666" font-family="sans-serif">Ground</text>'
+    # Ground line
+    ground_line = (
+        f'<rect x="{sx - 20}" y="{ground_y - 2}" width="{bw + 40}" height="3" fill="#555"/>'
+        f'<text x="{sx - 22}" y="{ground_y + 10}" '
+        f'font-size="9" fill="#555" font-family="sans-serif">GL</text>'
     )
 
+    # Legend
+    legend_y = H - 18
     legend = (
-        f'<rect x="10" y="{H - 18}" width="10" height="10" fill="#B5D4F4" rx="2"/>'
-        f'<text x="24" y="{H - 9}" font-size="9" fill="#666" font-family="sans-serif">Existing</text>'
-        f'<rect x="72" y="{H - 18}" width="10" height="10" fill="#F09595" rx="2"/>'
-        f'<text x="86" y="{H - 9}" font-size="9" fill="#666" font-family="sans-serif">New</text>'
-        f'<rect x="114" y="{H - 18}" width="10" height="10" fill="#97C459" rx="2"/>'
-        f'<text x="128" y="{H - 9}" font-size="9" fill="#666" font-family="sans-serif">Roof</text>'
+        f'<rect x="4" y="{legend_y}" width="9" height="9" fill="#B5D4F4" rx="2"/>'
+        f'<text x="16" y="{legend_y + 8}" font-size="8" fill="#555" font-family="sans-serif">Existing</text>'
+        f'<rect x="60" y="{legend_y}" width="9" height="9" fill="#F09595" rx="2"/>'
+        f'<text x="72" y="{legend_y + 8}" font-size="8" fill="#555" font-family="sans-serif">New</text>'
+        f'<rect x="100" y="{legend_y}" width="9" height="9" fill="#D0CEC8" rx="2"/>'
+        f'<text x="112" y="{legend_y + 8}" font-size="8" fill="#555" font-family="sans-serif">Below</text>'
+        f'<rect x="150" y="{legend_y}" width="9" height="9" fill="#97C459" rx="2"/>'
+        f'<text x="162" y="{legend_y + 8}" font-size="8" fill="#555" font-family="sans-serif">Roof</text>'
     )
 
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
         f'viewBox="0 0 {W} {H}">'
-        f'{overflow_label}{roof_svg}{floors_svg}{ground}{legend}'
+        f'{overflow_label}{roof_svg}{floors_svg}{ground_line}{legend}'
         f'</svg>'
     )
 
@@ -155,8 +213,8 @@ def render():
         </span>
     </div>
     <p style="color:#8a96a8;margin-top:0;font-size:0.95rem;">
-        Define the existing building and any proposed vertical extension.
-        Total GIA and NIA will update automatically in Element Areas.
+        Review the existing building and define any proposed vertical extension.
+        Storeys and areas are pre-filled from Project Setup.
     </p>
     """, unsafe_allow_html=True)
 
@@ -181,7 +239,6 @@ def render():
 
     st.markdown("---")
 
-    # ── Two-column layout ─────────────────────────────────────────────────────
     col_inputs, col_vis = st.columns([1.4, 1], gap="large")
 
     with col_inputs:
@@ -189,9 +246,18 @@ def render():
         # ── Existing building ─────────────────────────────────────────────────
         st.markdown("#### Existing Building")
 
+        # Show where storeys came from
+        above = st.session_state.get("storeys_above", 0)
+        below = st.session_state.get("storeys_below", 0)
+        if above > 0 or below > 0:
+            st.caption(
+                f"Pre-filled from Project Setup: "
+                f"{above} above ground + {below} below ground"
+            )
+
         ex_storeys = st.number_input(
-            "Number of existing storeys",
-            min_value=1, max_value=100, step=1,
+            "Total existing storeys (above ground)",
+            min_value=0, max_value=100, step=1,
             value=st.session_state.ext_existing_storeys,
             key="ext_existing_storeys",
         )
@@ -305,6 +371,7 @@ def render():
         svg = _building_svg(
             existing=st.session_state.ext_existing_storeys,
             new=st.session_state.ext_new_storeys,
+            below=st.session_state.get("storeys_below", 0),
             roof=st.session_state.ext_roof_works,
         )
         st.markdown(svg, unsafe_allow_html=True)
@@ -337,13 +404,19 @@ def render():
     with c10:
         st.metric("Structural (storeys)", st.session_state.ext_structural_storeys)
 
-    # ── Push totals into session state for downstream pages ──────────────────
+    # ── Push totals into session state for downstream pages ───────────────────
     st.session_state.gia_m2 = calc["total_gia_m2"]
     st.session_state.nia_m2 = calc["total_nia_m2"]
 
+    # Recalculate net:gross from developed totals
+    if calc["total_gia_m2"] > 0:
+        st.session_state.net_gross_pct = round(
+            calc["total_nia_m2"] / calc["total_gia_m2"] * 100, 1
+        )
+
     st.caption(
-        f"⚠️ GIA and NIA have been updated to {calc['total_gia_m2']:,.0f} m² "
-        f"and {calc['total_nia_m2']:,.0f} m² and will be used in Element Areas."
+        f"⚠️ GIA updated to {calc['total_gia_m2']:,.0f} m² and "
+        f"NIA to {calc['total_nia_m2']:,.0f} m² — these will be used in Element Areas."
     )
 
     # ── Navigation ────────────────────────────────────────────────────────────
