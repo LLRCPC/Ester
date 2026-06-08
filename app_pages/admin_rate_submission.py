@@ -3,14 +3,20 @@ admin_rate_submission.py
 ------------------------
 Page: Admin — Rate Submission
 
-Allows CPC admins to log rates from completed cost plans directly into Supabase.
-Submitted rates land in submitted_projects + submitted_rates with status='pending'
-and are reviewed/published manually before feeding into the estimating engine.
+Admins input total cost (£) per element. The backend calculates
+the rate (£/m²) by dividing total cost by the relevant area:
+  - NIA  → Fit-Out category elements
+  - GIA  → everything else
+  - %    → On Costs (no area calculation)
 
-Structure:
-  Section 1 — Project Details (name, date, location, package, GIA, NIA, storeys, spec)
-  Section 2 — Rate Entry (all 64 elements grouped by category, toggle ft²/m²)
-  Section 3 — Review & Submit
+GIA and NIA are entered once in Step 1 and reused throughout.
+Area can be toggled between m² and ft² at input — backend always
+stores and calculates in m².
+
+Flow:
+  Step 1 — Project Details (name, date, location, GIA, NIA, storeys, spec)
+  Step 2 — Cost Entry (total cost per element → auto-calculates £/m²)
+  Step 3 — Review & Submit
 """
 
 import streamlit as st
@@ -19,6 +25,7 @@ from datetime import date
 import os
 import httpx
 
+FT2_PER_M2 = 10.76391041671
 
 # ── Supabase helpers ──────────────────────────────────────────────────────────
 
@@ -67,7 +74,8 @@ def _post(table: str, payload: dict) -> dict:
 def load_elements() -> pd.DataFrame:
     rows = _get(
         "elements",
-        "is_active=eq.true&order=sort_order.asc&select=element_id,element_name,category,default_rate_unit"
+        "is_active=eq.true&order=sort_order.asc"
+        "&select=element_id,element_name,category,default_rate_unit,area_basis"
     )
     return pd.DataFrame(rows)
 
@@ -75,26 +83,54 @@ def load_elements() -> pd.DataFrame:
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 LOCATIONS      = ["London", "Birmingham", "Manchester"]
-PROJECT_TYPES  = ["Office", "Residential", "Retail", "Mixed Use", "Industrial", "Education", "Healthcare", "Hospitality", "Other"]
-CONTRACT_TYPES = ["Shell & Core", "Cat A Fit-Out", "Shell & Core + Cat A Fit-Out", "Refurbishment", "New Build"]
+PROJECT_TYPES  = ["Office", "Residential", "Retail", "Mixed Use",
+                  "Industrial", "Education", "Healthcare", "Hospitality", "Other"]
+CONTRACT_TYPES = ["Shell & Core", "Cat A Fit-Out",
+                  "Shell & Core + Cat A Fit-Out", "Refurbishment", "New Build"]
 SPEC_LEVELS    = ["Budget", "Standard", "High Spec", "Bespoke"]
-RATE_UNITS_M2  = ["£/m2", "%"]
-RATE_UNITS_FT2 = ["£/ft2", "%"]
 PACKAGES       = ["Shell & Core", "Cat A Fit-Out"]
 
-# Categories where % is the expected rate unit
+# Categories that use NIA as the denominator for rate calculation
+NIA_CATEGORIES = {"Fit-Out"}
+
+# Categories that use % — no area division
 PCT_CATEGORIES = {"On Costs"}
+
+
+# ── Area basis helper ─────────────────────────────────────────────────────────
+
+def _area_basis(category: str) -> str:
+    """Return 'NIA', 'GIA', or '%' for a given category."""
+    if category in PCT_CATEGORIES:
+        return "%"
+    if category in NIA_CATEGORIES:
+        return "NIA"
+    return "GIA"
+
+
+def _area_basis_label(category: str, gia_m2: float, nia_m2: float, unit: str) -> str:
+    """Human-readable area basis label shown next to each element."""
+    basis = _area_basis(category)
+    if basis == "%":
+        return "% of build cost"
+    area_m2 = nia_m2 if basis == "NIA" else gia_m2
+    if area_m2 <= 0:
+        return f"{basis} — enter area in Step 1"
+    if unit == "ft²":
+        return f"{basis}: {area_m2 * FT2_PER_M2:,.0f} ft²"
+    return f"{basis}: {area_m2:,.0f} m²"
 
 
 # ── Session state helpers ─────────────────────────────────────────────────────
 
 def _init_session():
-    st.session_state.setdefault("ars_step",          1)       # 1=details, 2=rates, 3=review
+    st.session_state.setdefault("ars_step",          1)
     st.session_state.setdefault("ars_project_saved", False)
     st.session_state.setdefault("ars_submission_id", None)
-    st.session_state.setdefault("ars_rates",         {})      # {element_id: {rate, unit, qty, total, package, notes}}
+    # {element_id: {total_cost, rate_m2, rate_unit, pct, package, notes}}
+    st.session_state.setdefault("ars_rates",         {})
     st.session_state.setdefault("ars_unit",          "m²")
-    # Project detail fields
+    # Project fields
     st.session_state.setdefault("ars_project_name",  "")
     st.session_state.setdefault("ars_location",      "London")
     st.session_state.setdefault("ars_project_type",  "Office")
@@ -119,31 +155,22 @@ def _reset_form():
 # ── Step indicator ────────────────────────────────────────────────────────────
 
 def _render_steps(current: int):
-    steps = ["1  Project Details", "2  Rate Entry", "3  Review & Submit"]
-    cols  = st.columns(3)
+    steps  = ["1  Project Details", "2  Cost Entry", "3  Review & Submit"]
+    cols   = st.columns(3)
     for i, (col, label) in enumerate(zip(cols, steps), 1):
         with col:
             if i < current:
-                colour = "#c8a84b"
-                prefix = "✓ "
-                weight = "500"
+                colour, prefix, weight = "#c8a84b", "✓ ", "500"
             elif i == current:
-                colour = "#0f1f3d"
-                prefix = ""
-                weight = "700"
+                colour, prefix, weight = "#0f1f3d", "", "700"
             else:
-                colour = "#b8c0cc"
-                prefix = ""
-                weight = "400"
-
+                colour, prefix, weight = "#b8c0cc", "", "400"
             st.markdown(
                 f"""<div style="text-align:center;padding:0.6rem 0.5rem;
-                    border-bottom: 3px solid {colour};
+                    border-bottom:3px solid {colour};
                     font-size:0.78rem;font-weight:{weight};
                     letter-spacing:0.06em;text-transform:uppercase;
-                    color:{colour};">
-                    {prefix}{label}
-                </div>""",
+                    color:{colour};">{prefix}{label}</div>""",
                 unsafe_allow_html=True,
             )
     st.markdown("<div style='height:1.5rem'></div>", unsafe_allow_html=True)
@@ -155,7 +182,8 @@ def _render_project_details():
     st.markdown("#### Project Details")
     st.markdown(
         "<p style='color:#8a96a8;font-size:0.9rem;margin-top:-0.5rem;'>"
-        "Enter the key details for the cost plan you are logging rates from.</p>",
+        "Enter the key details for the cost plan you are logging rates from. "
+        "GIA and NIA are used to calculate £/m² rates automatically.</p>",
         unsafe_allow_html=True,
     )
 
@@ -192,6 +220,12 @@ def _render_project_details():
             index=SPEC_LEVELS.index(st.session_state.ars_spec_level),
             key="ars_spec_input",
         )
+        st.session_state.ars_submitted_by = st.text_input(
+            "Your name",
+            value=st.session_state.ars_submitted_by,
+            placeholder="e.g. J. Smith",
+            key="ars_submitter_input",
+        )
 
     with c2:
         st.session_state.ars_cost_date = st.date_input(
@@ -200,31 +234,69 @@ def _render_project_details():
             key="ars_date_input",
         )
 
-        # GIA
-        gia_val = st.number_input(
-            "GIA (m²)",
-            min_value=0.0,
-            step=100.0,
-            format="%.0f",
-            value=float(st.session_state.ars_gia_m2),
-            key="ars_gia_input",
+        # Area unit toggle — affects display only, storage always m²
+        area_unit = st.radio(
+            "Area input unit",
+            ["m²", "ft²"],
+            horizontal=True,
+            key="ars_area_unit_step1",
         )
-        st.session_state.ars_gia_m2 = gia_val
-        if gia_val > 0:
-            st.caption(f"≈ {gia_val * 10.764:,.0f} ft²")
 
-        # NIA
-        nia_val = st.number_input(
-            "NIA (m²)",
-            min_value=0.0,
-            step=100.0,
-            format="%.0f",
-            value=float(st.session_state.ars_nia_m2),
-            key="ars_nia_input",
-        )
-        st.session_state.ars_nia_m2 = nia_val
-        if nia_val > 0:
-            st.caption(f"≈ {nia_val * 10.764:,.0f} ft²")
+        # GIA input
+        if area_unit == "ft²":
+            gia_display = st.session_state.ars_gia_m2 * FT2_PER_M2
+            gia_entered = st.number_input(
+                "GIA (ft²) *",
+                min_value=0.0, step=1000.0, format="%.0f",
+                value=float(gia_display),
+                key="ars_gia_input",
+            )
+            st.session_state.ars_gia_m2 = gia_entered / FT2_PER_M2
+            if gia_entered > 0:
+                st.caption(f"≈ {st.session_state.ars_gia_m2:,.0f} m²")
+        else:
+            gia_entered = st.number_input(
+                "GIA (m²) *",
+                min_value=0.0, step=100.0, format="%.0f",
+                value=float(st.session_state.ars_gia_m2),
+                key="ars_gia_input",
+            )
+            st.session_state.ars_gia_m2 = gia_entered
+            if gia_entered > 0:
+                st.caption(f"≈ {gia_entered * FT2_PER_M2:,.0f} ft²")
+
+        # NIA input
+        if area_unit == "ft²":
+            nia_display = st.session_state.ars_nia_m2 * FT2_PER_M2
+            nia_entered = st.number_input(
+                "NIA (ft²)",
+                min_value=0.0, step=1000.0, format="%.0f",
+                value=float(nia_display),
+                key="ars_nia_input",
+            )
+            st.session_state.ars_nia_m2 = nia_entered / FT2_PER_M2
+            if nia_entered > 0:
+                st.caption(f"≈ {st.session_state.ars_nia_m2:,.0f} m²")
+        else:
+            nia_entered = st.number_input(
+                "NIA (m²)",
+                min_value=0.0, step=100.0, format="%.0f",
+                value=float(st.session_state.ars_nia_m2),
+                key="ars_nia_input",
+            )
+            st.session_state.ars_nia_m2 = nia_entered
+            if nia_entered > 0:
+                st.caption(f"≈ {nia_entered * FT2_PER_M2:,.0f} ft²")
+
+        # Net:Gross ratio
+        gia_m2 = st.session_state.ars_gia_m2
+        nia_m2 = st.session_state.ars_nia_m2
+        if gia_m2 > 0 and nia_m2 > 0:
+            if nia_m2 > gia_m2:
+                st.warning("⚠️ NIA cannot exceed GIA.")
+            else:
+                ratio = (nia_m2 / gia_m2) * 100
+                st.metric("Net:Gross ratio", f"{ratio:.1f}%")
 
         col_ab, col_bg = st.columns(2)
         with col_ab:
@@ -242,13 +314,6 @@ def _render_project_details():
                 key="ars_below_input",
             )
 
-        st.session_state.ars_submitted_by = st.text_input(
-            "Your name",
-            value=st.session_state.ars_submitted_by,
-            placeholder="e.g. J. Smith",
-            key="ars_submitter_input",
-        )
-
     st.session_state.ars_notes = st.text_area(
         "Notes (optional)",
         value=st.session_state.ars_notes,
@@ -257,23 +322,35 @@ def _render_project_details():
         key="ars_notes_input",
     )
 
+    # Area basis info box
+    gia_m2 = st.session_state.ars_gia_m2
+    nia_m2 = st.session_state.ars_nia_m2
+    if gia_m2 > 0:
+        st.info(
+            f"📐 **Rate calculation basis:** "
+            f"Most elements will use GIA ({gia_m2:,.0f} m²). "
+            f"Fit-Out elements will use NIA "
+            f"({nia_m2:,.0f} m²{' — ⚠️ enter NIA above' if nia_m2 == 0 else ''}). "
+            f"On Costs are entered as a percentage."
+        )
+
     st.markdown("---")
 
-    # Validation
     can_proceed = bool(
         st.session_state.ars_project_name
         and st.session_state.ars_location
         and st.session_state.ars_package
         and st.session_state.ars_cost_date
+        and st.session_state.ars_gia_m2 > 0
     )
 
     if not can_proceed:
-        st.warning("⚠️ Project name, location, package and cost date are required to continue.")
+        st.warning("⚠️ Project name, location, package, cost date and GIA are required to continue.")
 
     col_next, _ = st.columns([1, 4])
     with col_next:
         if st.button(
-            "Next: Enter Rates →",
+            "Next: Enter Costs →",
             type="primary",
             disabled=not can_proceed,
             use_container_width=True,
@@ -282,15 +359,18 @@ def _render_project_details():
             st.rerun()
 
 
-# ── Step 2: Rate Entry ────────────────────────────────────────────────────────
+# ── Step 2: Cost Entry ────────────────────────────────────────────────────────
 
-def _render_rate_entry(elements_df: pd.DataFrame):
+def _render_cost_entry(elements_df: pd.DataFrame):
 
-    # Unit toggle
+    gia_m2 = st.session_state.ars_gia_m2
+    nia_m2 = st.session_state.ars_nia_m2
+
+    # ── Controls row ─────────────────────────────────────────────────────────
     col_toggle, col_progress, _ = st.columns([1, 2, 3])
     with col_toggle:
         unit = st.radio(
-            "Rate unit",
+            "Area display unit",
             ["m²", "ft²"],
             horizontal=True,
             key="ars_unit_toggle",
@@ -298,46 +378,81 @@ def _render_rate_entry(elements_df: pd.DataFrame):
         )
         st.session_state.ars_unit = unit
 
-    # Progress indicator
-    logged = len([v for v in st.session_state.ars_rates.values() if v.get("rate", 0) > 0])
+    logged = len([v for v in st.session_state.ars_rates.values()
+                  if v.get("total_cost", 0) > 0 or v.get("pct", 0) > 0])
     total  = len(elements_df)
+
     with col_progress:
         st.markdown(
             f"<div style='padding-top:0.4rem;font-size:0.82rem;color:#8a96a8;'>"
-            f"<b style='color:#0f1f3d;'>{logged}</b> of {total} elements logged</div>",
+            f"<b style='color:#0f1f3d;'>{logged}</b> of {total} elements entered</div>",
             unsafe_allow_html=True,
         )
         st.progress(logged / total if total > 0 else 0)
 
     st.markdown(
-        "<p style='color:#8a96a8;font-size:0.88rem;margin-bottom:1rem;'>"
-        "Select the elements you have up-to-date rates for. "
-        "Leave others blank — only filled rates will be submitted.</p>",
+        "<p style='color:#8a96a8;font-size:0.88rem;margin-bottom:0.5rem;'>"
+        "Enter the <b>total cost (£)</b> for each element from your cost plan. "
+        "The £/m² rate is calculated automatically using "
+        "GIA or NIA as appropriate. Leave blank to skip.</p>",
         unsafe_allow_html=True,
     )
 
-    # Determine rate units based on toggle
-    rate_units = RATE_UNITS_FT2 if unit == "ft²" else RATE_UNITS_M2
+    # Area summary bar
+    gia_display = gia_m2 * FT2_PER_M2 if unit == "ft²" else gia_m2
+    nia_display = nia_m2 * FT2_PER_M2 if unit == "ft²" else nia_m2
+    unit_label  = unit
+    st.markdown(
+        f"""<div style="background:#f5f4f0;border:1px solid #e4e0d8;
+            border-radius:6px;padding:0.6rem 1rem;margin-bottom:1rem;
+            font-size:0.82rem;color:#0f1f3d;display:flex;gap:2rem;">
+            <span>📐 <b>GIA:</b> {gia_display:,.0f} {unit_label}
+            (used for most elements)</span>
+            <span>📐 <b>NIA:</b> {nia_display:,.0f} {unit_label}
+            (used for Fit-Out)</span>
+            <span>📊 <b>On Costs:</b> % entry</span>
+        </div>""",
+        unsafe_allow_html=True,
+    )
 
-    # Group by category
-    for category, cat_df in elements_df.groupby(
-        elements_df["category"],
-        sort=False
-    ):
-        # Count how many in this category have been logged
+    # ── Group by category ─────────────────────────────────────────────────────
+    for category, cat_df in elements_df.groupby("category", sort=False):
+
+        basis = _area_basis(category)
+        is_pct = (basis == "%")
+
+        # Area to use for this category
+        area_m2 = nia_m2 if basis == "NIA" else gia_m2
+
         cat_logged = sum(
             1 for _, row in cat_df.iterrows()
-            if st.session_state.ars_rates.get(row["element_id"], {}).get("rate", 0) > 0
+            if st.session_state.ars_rates.get(
+                row["element_id"], {}
+            ).get("total_cost", 0) > 0
+            or st.session_state.ars_rates.get(
+                row["element_id"], {}
+            ).get("pct", 0) > 0
         )
         cat_total = len(cat_df)
 
+        # Category header with basis badge
+        basis_colour = {"GIA": "#e8f0fe", "NIA": "#e8f5e9", "%": "#fff8e6"}
+        basis_text   = {"GIA": "#1a4a9e", "NIA": "#2e7d32", "%": "#c8a84b"}
+        bc = basis_colour.get(basis, "#f0f0f0")
+        bt = basis_text.get(basis, "#555")
+
         st.markdown(
             f"""<div style="display:flex;justify-content:space-between;
-                align-items:baseline;margin:1.4rem 0 0.5rem;">
+                align-items:center;margin:1.4rem 0 0.5rem;">
                 <span style="font-family:'DM Serif Display',serif;
                 font-size:1.1rem;color:#0f1f3d;">{category}</span>
-                <span style="font-size:0.75rem;color:#8a96a8;">
-                {cat_logged}/{cat_total} logged</span>
+                <div style="display:flex;gap:0.5rem;align-items:center;">
+                    <span style="background:{bc};color:{bt};font-size:0.68rem;
+                    font-weight:700;letter-spacing:0.06em;text-transform:uppercase;
+                    padding:0.15rem 0.5rem;border-radius:4px;">÷ {basis}</span>
+                    <span style="font-size:0.75rem;color:#8a96a8;">
+                    {cat_logged}/{cat_total} entered</span>
+                </div>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -345,45 +460,38 @@ def _render_rate_entry(elements_df: pd.DataFrame):
         for _, row in cat_df.iterrows():
             element_id   = row["element_id"]
             element_name = row["element_name"]
-            is_pct       = (category in PCT_CATEGORIES)
+            existing     = st.session_state.ars_rates.get(element_id, {})
 
-            # Get existing values
-            existing = st.session_state.ars_rates.get(element_id, {})
-            existing_rate  = existing.get("rate", 0.0)
-            existing_qty   = existing.get("quantity", 0.0)
-            existing_notes = existing.get("notes", "")
-            existing_pkg   = existing.get("package", PACKAGES[0])
+            if is_pct:
+                # ── On Costs — percentage entry ───────────────────────────────
+                existing_pct = existing.get("pct", 0.0)
+                is_entered   = existing_pct > 0
+                badge        = "✓ " if is_entered else ""
+                hint         = f" — {existing_pct:.2f}%" if is_entered else ""
 
-            is_logged  = existing_rate > 0
-            badge      = "✓ " if is_logged else ""
-            rate_hint  = f" — {existing_rate:,.2f}" if is_logged else ""
-
-            with st.expander(f"{badge}{element_id}  {element_name}{rate_hint}"):
-
-                if is_pct:
-                    # On costs — percentage input only
-                    c1, c2, c3 = st.columns([2, 2, 2])
+                with st.expander(f"{badge}{element_id}  {element_name}{hint}"):
+                    c1, c2, c3 = st.columns([2, 2, 3])
                     with c1:
                         pct_val = st.number_input(
-                            "Rate (%)",
-                            min_value=0.0,
-                            max_value=100.0,
-                            step=0.1,
-                            format="%.2f",
-                            value=float(existing_rate),
-                            key=f"ars_rate_{element_id}",
+                            "Percentage (%)",
+                            min_value=0.0, max_value=100.0,
+                            step=0.1, format="%.2f",
+                            value=float(existing_pct),
+                            key=f"ars_pct_{element_id}",
                         )
                     with c2:
                         pkg_val = st.selectbox(
                             "Package",
                             PACKAGES + ["Both"],
-                            index=(PACKAGES + ["Both"]).index(existing_pkg) if existing_pkg in PACKAGES + ["Both"] else 0,
+                            index=(PACKAGES + ["Both"]).index(
+                                existing.get("package", PACKAGES[0])
+                            ) if existing.get("package") in PACKAGES + ["Both"] else 0,
                             key=f"ars_pkg_{element_id}",
                         )
                     with c3:
                         notes_val = st.text_input(
                             "Notes",
-                            value=existing_notes,
+                            value=existing.get("notes", ""),
                             placeholder="Optional...",
                             key=f"ars_notes_{element_id}",
                             label_visibility="collapsed",
@@ -391,81 +499,108 @@ def _render_rate_entry(elements_df: pd.DataFrame):
 
                     if pct_val > 0:
                         st.session_state.ars_rates[element_id] = {
-                            "rate":     pct_val,
-                            "rate_unit": "%",
-                            "quantity": None,
+                            "pct":        pct_val,
+                            "rate_m2":    None,
+                            "rate_unit":  "%",
                             "total_cost": None,
-                            "package":  pkg_val,
-                            "notes":    notes_val or None,
+                            "package":    pkg_val,
+                            "notes":      notes_val or None,
                         }
                     elif element_id in st.session_state.ars_rates:
                         del st.session_state.ars_rates[element_id]
 
-                else:
-                    # Standard rate entry
-                    c1, c2, c3, c4, c5 = st.columns([2, 1.5, 1.5, 1.5, 2])
+            else:
+                # ── Standard elements — total cost entry ──────────────────────
+                existing_cost = existing.get("total_cost", 0.0)
+                is_entered    = existing_cost > 0
+                badge         = "✓ " if is_entered else ""
+
+                # Show calculated rate in expander header if entered
+                rate_hint = ""
+                if is_entered and area_m2 > 0:
+                    rate_m2   = existing_cost / area_m2
+                    rate_hint = f" — £{rate_m2:,.2f}/m²"
+                elif is_entered:
+                    rate_hint = f" — £{existing_cost:,.0f} total"
+
+                basis_label = _area_basis_label(
+                    category, gia_m2, nia_m2, unit
+                )
+
+                with st.expander(
+                    f"{badge}{element_id}  {element_name}{rate_hint}"
+                ):
+                    # Show which area is being used
+                    st.markdown(
+                        f"<div style='font-size:0.75rem;color:#8a96a8;"
+                        f"margin-bottom:0.5rem;'>Rate basis: {basis_label}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    c1, c2, c3 = st.columns([2, 2, 3])
 
                     with c1:
-                        rate_val = st.number_input(
-                            f"Rate (£/{unit})",
+                        cost_val = st.number_input(
+                            "Total cost (£)",
                             min_value=0.0,
-                            step=1.0,
-                            format="%.2f",
-                            value=float(existing_rate),
-                            key=f"ars_rate_{element_id}",
-                        )
-                    with c2:
-                        # Default unit based on toggle, but allow % override
-                        default_unit = "£/ft2" if unit == "ft²" else "£/m2"
-                        unit_options = rate_units
-                        unit_val = st.selectbox(
-                            "Unit",
-                            unit_options,
-                            index=unit_options.index(default_unit) if default_unit in unit_options else 0,
-                            key=f"ars_unit_{element_id}",
-                        )
-                    with c3:
-                        qty_val = st.number_input(
-                            f"Qty ({unit})",
-                            min_value=0.0,
-                            step=10.0,
+                            step=1000.0,
                             format="%.0f",
-                            value=float(existing_qty) if existing_qty else 0.0,
-                            key=f"ars_qty_{element_id}",
+                            value=float(existing_cost),
+                            key=f"ars_cost_{element_id}",
                         )
-                    with c4:
+
+                    with c2:
                         pkg_val = st.selectbox(
                             "Package",
                             PACKAGES,
-                            index=PACKAGES.index(existing_pkg) if existing_pkg in PACKAGES else 0,
+                            index=PACKAGES.index(
+                                existing.get("package", PACKAGES[0])
+                            ) if existing.get("package") in PACKAGES else 0,
                             key=f"ars_pkg_{element_id}",
                         )
-                    with c5:
+
+                    with c3:
                         notes_val = st.text_input(
                             "Notes",
-                            value=existing_notes,
+                            value=existing.get("notes", ""),
                             placeholder="Optional...",
                             key=f"ars_notes_{element_id}",
                             label_visibility="collapsed",
                         )
 
-                    # Calculate total
-                    total_cost = None
-                    if rate_val > 0 and qty_val > 0:
-                        total_cost = round(rate_val * qty_val, 0)
-                        st.markdown(
-                            f"<div style='font-family:DM Serif Display,serif;"
-                            f"font-size:0.95rem;color:#0f1f3d;padding-top:0.25rem;'>"
-                            f"= £{total_cost:,.0f}</div>",
-                            unsafe_allow_html=True,
-                        )
+                    # Calculate and display rate
+                    if cost_val > 0:
+                        if area_m2 > 0:
+                            rate_m2 = cost_val / area_m2
+                            col_calc, _ = st.columns([2, 2])
+                            with col_calc:
+                                st.markdown(
+                                    f"""<div style="background:#f5f4f0;
+                                        border:1px solid #e4e0d8;border-radius:6px;
+                                        padding:0.6rem 0.9rem;margin-top:0.25rem;">
+                                        <div style="font-size:0.7rem;color:#8a96a8;
+                                        text-transform:uppercase;letter-spacing:0.06em;">
+                                        Calculated rate</div>
+                                        <div style="font-family:'DM Serif Display',serif;
+                                        font-size:1.2rem;color:#0f1f3d;">
+                                        £{rate_m2:,.2f} / m²</div>
+                                        <div style="font-size:0.72rem;color:#8a96a8;">
+                                        £{cost_val:,.0f} ÷ {area_m2:,.0f} m² {basis}</div>
+                                    </div>""",
+                                    unsafe_allow_html=True,
+                                )
+                        else:
+                            rate_m2 = None
+                            st.warning(
+                                f"⚠️ {basis} is 0 — rate cannot be calculated. "
+                                f"Go back to Step 1 and enter the {basis}."
+                            )
 
-                    if rate_val > 0:
                         st.session_state.ars_rates[element_id] = {
-                            "rate":       rate_val,
-                            "rate_unit":  unit_val,
-                            "quantity":   qty_val if qty_val > 0 else None,
-                            "total_cost": total_cost,
+                            "total_cost": cost_val,
+                            "rate_m2":    rate_m2,
+                            "rate_unit":  "£/m2",
+                            "pct":        None,
                             "package":    pkg_val,
                             "notes":      notes_val or None,
                         }
@@ -480,32 +615,35 @@ def _render_rate_entry(elements_df: pd.DataFrame):
             st.session_state.ars_step = 1
             st.rerun()
     with col_next:
-        logged_count = len([
+        entered_count = len([
             v for v in st.session_state.ars_rates.values()
-            if v.get("rate", 0) > 0
+            if v.get("total_cost", 0) > 0 or v.get("pct", 0) > 0
         ])
         if st.button(
             "Review & Submit →",
             type="primary",
-            disabled=logged_count == 0,
+            disabled=entered_count == 0,
             use_container_width=True,
         ):
             st.session_state.ars_step = 3
             st.rerun()
 
-    if logged_count == 0:
-        st.caption("Enter at least one rate to proceed.")
+    if entered_count == 0:
+        st.caption("Enter at least one cost to proceed.")
 
 
 # ── Step 3: Review & Submit ───────────────────────────────────────────────────
 
 def _render_review(elements_df: pd.DataFrame):
 
+    gia_m2 = st.session_state.ars_gia_m2
+    nia_m2 = st.session_state.ars_nia_m2
+
     st.markdown("#### Review Before Submitting")
     st.markdown(
         "<p style='color:#8a96a8;font-size:0.9rem;margin-top:-0.5rem;'>"
-        "Check the details below. Once submitted, rates will be held for review "
-        "before being published into the estimating engine.</p>",
+        "Check everything below. Once submitted, rates will be held for "
+        "review before being published into the estimating engine.</p>",
         unsafe_allow_html=True,
     )
 
@@ -516,7 +654,7 @@ def _render_review(elements_df: pd.DataFrame):
                     padding:1.25rem 1.5rem;margin-bottom:1.5rem;
                     font-size:0.875rem;line-height:2;color:#0f1f3d;">
             <div style="font-family:'DM Serif Display',serif;font-size:1.1rem;
-                        margin-bottom:0.5rem;color:#0f1f3d;">
+                        margin-bottom:0.5rem;">
                 {st.session_state.ars_project_name}
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 2rem;">
@@ -524,69 +662,96 @@ def _render_review(elements_df: pd.DataFrame):
                 <div>📦 <b>Package:</b> {st.session_state.ars_package}</div>
                 <div>🏢 <b>Type:</b> {st.session_state.ars_project_type}</div>
                 <div>⭐ <b>Spec:</b> {st.session_state.ars_spec_level}</div>
-                <div>📐 <b>GIA:</b> {st.session_state.ars_gia_m2:,.0f} m²</div>
-                <div>📐 <b>NIA:</b> {st.session_state.ars_nia_m2:,.0f} m²</div>
-                <div>🏗️ <b>Storeys:</b> {st.session_state.ars_storeys_above} above · {st.session_state.ars_storeys_below} below</div>
+                <div>📐 <b>GIA:</b> {gia_m2:,.0f} m²
+                     ({gia_m2 * FT2_PER_M2:,.0f} ft²)</div>
+                <div>📐 <b>NIA:</b> {nia_m2:,.0f} m²
+                     ({nia_m2 * FT2_PER_M2:,.0f} ft²)</div>
+                <div>🏗️ <b>Storeys:</b>
+                     {st.session_state.ars_storeys_above} above ·
+                     {st.session_state.ars_storeys_below} below</div>
                 <div>📅 <b>Cost date:</b> {st.session_state.ars_cost_date}</div>
-                {"<div>👤 <b>Submitted by:</b> " + st.session_state.ars_submitted_by + "</div>" if st.session_state.ars_submitted_by else ""}
+                {"<div>👤 <b>Submitted by:</b> " + st.session_state.ars_submitted_by + "</div>"
+                 if st.session_state.ars_submitted_by else ""}
             </div>
-            {f'<div style="margin-top:0.5rem;color:#8a96a8;">📝 {st.session_state.ars_notes}</div>' if st.session_state.ars_notes else ""}
+            {f'<div style="margin-top:0.5rem;color:#8a96a8;">📝 {st.session_state.ars_notes}</div>'
+             if st.session_state.ars_notes else ""}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # ── Rates table ───────────────────────────────────────────────────────────
+    # ── Rates review table ────────────────────────────────────────────────────
     rates_data = st.session_state.ars_rates
     if not rates_data:
-        st.warning("No rates logged — go back and enter at least one rate.")
+        st.warning("No costs entered — go back and enter at least one.")
         return
 
-    # Build display dataframe
-    el_lookup = {row["element_id"]: row["element_name"] for _, row in elements_df.iterrows()}
-    rows = []
+    el_lookup  = {r["element_id"]: r for _, r in elements_df.iterrows()}
+    rows       = []
+    total_cost = 0.0
+
     for element_id, data in rates_data.items():
-        if data.get("rate", 0) > 0:
+        el       = el_lookup.get(element_id, {})
+        category = el.get("category", "—") if isinstance(el, dict) else "—"
+        name     = el.get("element_name", element_id) if isinstance(el, dict) else element_id
+        basis    = _area_basis(category)
+
+        if data.get("rate_unit") == "%":
             rows.append({
-                "ID":         element_id,
-                "Element":    el_lookup.get(element_id, element_id),
-                "Package":    data.get("package", "—"),
-                "Rate":       f"£{data['rate']:,.2f}" if data["rate_unit"] != "%" else f"{data['rate']:.2f}%",
-                "Unit":       data.get("rate_unit", "—"),
-                "Quantity":   f"{data['quantity']:,.0f}" if data.get("quantity") else "—",
-                "Total (£)":  f"£{data['total_cost']:,.0f}" if data.get("total_cost") else "—",
-                "Notes":      data.get("notes") or "—",
+                "ID":            element_id,
+                "Element":       name,
+                "Package":       data.get("package", "—"),
+                "Total Cost":    "—",
+                "Basis":         "%",
+                "Rate (£/m²)":   "—",
+                "Entry":         f"{data['pct']:.2f}%",
+                "Notes":         data.get("notes") or "—",
+            })
+        else:
+            cost    = data.get("total_cost", 0) or 0
+            rate_m2 = data.get("rate_m2")
+            total_cost += cost
+            rows.append({
+                "ID":            element_id,
+                "Element":       name,
+                "Package":       data.get("package", "—"),
+                "Total Cost":    f"£{cost:,.0f}",
+                "Basis":         basis,
+                "Rate (£/m²)":   f"£{rate_m2:,.2f}" if rate_m2 else "⚠️ No area",
+                "Entry":         f"£{cost:,.0f} ÷ {basis}",
+                "Notes":         data.get("notes") or "—",
             })
 
-    display_df = pd.DataFrame(rows)
-
-    col_m1, col_m2, col_m3 = st.columns(3)
-    with col_m1:
-        st.metric("Rates to submit", len(rows))
-    with col_m2:
-        total_logged = sum(
-            d.get("total_cost", 0) or 0
-            for d in rates_data.values()
-            if d.get("rate_unit") != "%"
-        )
-        if total_logged > 0:
-            st.metric("Total logged cost", f"£{total_logged:,.0f}")
-    with col_m3:
+    # Headline metrics
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Elements entered", len(rows))
+    with c2:
+        st.metric("Total cost logged", f"£{total_cost:,.0f}")
+    with c3:
+        if gia_m2 > 0 and total_cost > 0:
+            st.metric("Overall £/m² GIA", f"£{total_cost / gia_m2:,.0f}")
+    with c4:
         st.metric("Status after submit", "Pending review")
 
     st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+    # Warn if any rates couldn't be calculated
+    missing = [r for r in rows if r["Rate (£/m²)"] == "⚠️ No area"]
+    if missing:
+        st.warning(
+            f"⚠️ {len(missing)} element(s) have no calculable rate because "
+            f"the relevant area is 0. Go back to Step 1 to fix this."
+        )
 
     st.markdown("---")
 
-    # ── Submit button ─────────────────────────────────────────────────────────
     col_back, _, col_submit = st.columns([1, 3, 1])
-
     with col_back:
-        if st.button("← Edit Rates", use_container_width=True):
+        if st.button("← Edit Costs", use_container_width=True):
             st.session_state.ars_step = 2
             st.rerun()
-
     with col_submit:
         if st.button(
             "✅  Submit to Supabase",
@@ -596,54 +761,57 @@ def _render_review(elements_df: pd.DataFrame):
             _submit_to_supabase(elements_df)
 
 
+# ── Submit to Supabase ────────────────────────────────────────────────────────
+
 def _submit_to_supabase(elements_df: pd.DataFrame):
-    """Write project + rates to Supabase submitted_projects and submitted_rates."""
     try:
         with st.spinner("Submitting to Supabase..."):
 
             # 1. Insert project header
-            project_payload = {
-                "project_name":   st.session_state.ars_project_name,
-                "location":       st.session_state.ars_location,
-                "project_type":   st.session_state.ars_project_type,
-                "package":        st.session_state.ars_package,
-                "gia_m2":         st.session_state.ars_gia_m2 or None,
-                "nia_m2":         st.session_state.ars_nia_m2 or None,
-                "storeys_above":  st.session_state.ars_storeys_above or None,
-                "storeys_below":  st.session_state.ars_storeys_below or None,
-                "spec_level":     st.session_state.ars_spec_level,
-                "cost_date":      str(st.session_state.ars_cost_date),
-                "notes":          st.session_state.ars_notes or None,
-                "submitted_by":   st.session_state.ars_submitted_by or None,
-                "status":         "pending",
-            }
-            project_row = _post("submitted_projects", project_payload)
+            project_row = _post("submitted_projects", {
+                "project_name":  st.session_state.ars_project_name,
+                "location":      st.session_state.ars_location,
+                "project_type":  st.session_state.ars_project_type,
+                "package":       st.session_state.ars_package,
+                "gia_m2":        st.session_state.ars_gia_m2 or None,
+                "nia_m2":        st.session_state.ars_nia_m2 or None,
+                "storeys_above": st.session_state.ars_storeys_above or None,
+                "storeys_below": st.session_state.ars_storeys_below or None,
+                "spec_level":    st.session_state.ars_spec_level,
+                "cost_date":     str(st.session_state.ars_cost_date),
+                "notes":         st.session_state.ars_notes or None,
+                "submitted_by":  st.session_state.ars_submitted_by or None,
+                "status":        "pending",
+            })
             submission_id = project_row["id"]
 
             # 2. Insert individual rates
-            rates_data = st.session_state.ars_rates
-            for element_id, data in rates_data.items():
-                if data.get("rate", 0) > 0:
-                    rate_payload = {
-                        "submission_id": submission_id,
-                        "element_id":    element_id,
-                        "package":       data.get("package", "Shell & Core"),
-                        "rate":          data["rate"],
-                        "rate_unit":     data.get("rate_unit", "£/m2"),
-                        "quantity":      data.get("quantity"),
-                        "total_cost":    data.get("total_cost"),
-                        "notes":         data.get("notes"),
-                    }
-                    _post("submitted_rates", rate_payload)
+            for element_id, data in st.session_state.ars_rates.items():
+                has_cost = data.get("total_cost", 0) or 0
+                has_pct  = data.get("pct", 0) or 0
+                if not has_cost and not has_pct:
+                    continue
 
-        # ── Success ───────────────────────────────────────────────────────────
-        st.session_state.ars_submission_id  = submission_id
-        st.session_state.ars_project_saved  = True
+                _post("submitted_rates", {
+                    "submission_id": submission_id,
+                    "element_id":    element_id,
+                    "package":       data.get("package", "Shell & Core"),
+                    # Store the calculated £/m² rate, or % for on costs
+                    "rate":          data["pct"] if data.get("rate_unit") == "%"
+                                     else (data.get("rate_m2") or 0),
+                    "rate_unit":     data.get("rate_unit", "£/m2"),
+                    "quantity":      None,
+                    "total_cost":    data.get("total_cost"),
+                    "notes":         data.get("notes"),
+                })
+
+        st.session_state.ars_submission_id = submission_id
+        st.session_state.ars_project_saved = True
         st.rerun()
 
     except Exception as e:
         st.error(f"❌ Submission failed: {e}")
-        st.caption("Check your Supabase credentials and table permissions, then try again.")
+        st.caption("Check your Supabase credentials and try again.")
 
 
 # ── Success screen ────────────────────────────────────────────────────────────
@@ -659,8 +827,9 @@ def _render_success():
             </div>
             <div style="color:#8a96a8;font-size:0.9rem;max-width:480px;
                         margin:0 auto 2rem;">
-                Your rates are now sitting in Supabase with status <b>pending</b>.
-                A CPC admin will review and publish them into the estimating engine.
+                Your rates are now in Supabase with status <b>pending</b>.
+                Go to the <b>Publish Rates</b> page to review and push them
+                live into the estimating engine.
             </div>
         </div>
         """,
@@ -676,13 +845,13 @@ def _render_success():
         )
 
     col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button(
-            "＋  Submit Another Project",
-            type="primary",
-            use_container_width=True,
-        ):
+    with col1:
+        if st.button("＋  Submit Another", type="primary", use_container_width=True):
             _reset_form()
+            st.rerun()
+    with col3:
+        if st.button("📤  Publish Rates →", use_container_width=True):
+            st.session_state.page_idx = 8
             st.rerun()
 
 
@@ -691,7 +860,6 @@ def _render_success():
 def render():
     _init_session()
 
-    # ── Page header ───────────────────────────────────────────────────────────
     st.markdown("""
     <div style="margin-bottom:0.25rem;">
         <span style="font-family:'DM Serif Display',serif;font-size:2rem;color:#0f1f3d;">
@@ -706,17 +874,15 @@ def render():
         </span>
     </div>
     <p style="color:#8a96a8;margin-top:0;font-size:0.95rem;">
-        Log rates from a completed cost plan. Submitted rates are held for review
-        before being published into the estimating engine.
+        Log total costs from a completed cost plan. Rates are calculated
+        automatically and held for review before going live.
     </p>
     """, unsafe_allow_html=True)
 
-    # ── Success state ─────────────────────────────────────────────────────────
     if st.session_state.ars_project_saved:
         _render_success()
         return
 
-    # ── Load elements ─────────────────────────────────────────────────────────
     try:
         elements_df = load_elements()
     except Exception as e:
@@ -727,16 +893,17 @@ def render():
         st.error("No elements found in Supabase. Check the elements table.")
         return
 
-    # ── Step indicator ────────────────────────────────────────────────────────
     _render_steps(st.session_state.ars_step)
 
-    # ── Route to correct step ─────────────────────────────────────────────────
     if st.session_state.ars_step == 1:
         _render_project_details()
     elif st.session_state.ars_step == 2:
-        _render_rate_entry(elements_df)
+        _render_cost_entry(elements_df)
     elif st.session_state.ars_step == 3:
         _render_review(elements_df)
 
     st.markdown("---")
-    st.caption("⚠️ Submitted rates are pending review and will not affect live estimates until published by an admin.")
+    st.caption(
+        "⚠️ Submitted rates are pending review and will not affect "
+        "live estimates until published by an admin."
+    )
