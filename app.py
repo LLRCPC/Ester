@@ -1,6 +1,8 @@
 import streamlit as st
 from engine.data_loader import load_cost_database, get_json_mtime
 from engine.session_helpers import new_project, PAGES
+import os
+import httpx
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -233,102 +235,47 @@ p { line-height: 1.65; }
     background: var(--surface) !important;
 }
 
-/* ── Tabs ──────────────────────────────────────────────────────────────── */
-[data-testid="stTabs"] [data-baseweb="tab-list"] {
-    gap: 0 !important;
-    border-bottom: 2px solid var(--border-lt) !important;
-    background: transparent !important;
-}
-[data-testid="stTabs"] [data-baseweb="tab"] {
-    font-family: 'DM Sans', sans-serif !important;
-    font-size: 0.85rem !important;
-    font-weight: 500 !important;
-    color: var(--mid) !important;
-    padding: 0.6rem 1.25rem !important;
-    border-radius: 0 !important;
-    border-bottom: 2px solid transparent !important;
-    margin-bottom: -2px !important;
-    transition: color 0.15s !important;
-}
-[data-testid="stTabs"] [aria-selected="true"] {
-    color: var(--navy) !important;
-    border-bottom-color: var(--navy) !important;
-    font-weight: 600 !important;
+/* ── Tables ────────────────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: var(--radius) !important;
+    overflow: hidden !important;
+    border: 1px solid var(--border-lt) !important;
 }
 
 /* ── Expanders ─────────────────────────────────────────────────────────── */
 [data-testid="stExpander"] {
-    background: var(--surface) !important;
     border: 1px solid var(--border-lt) !important;
     border-radius: var(--radius) !important;
-    margin-bottom: 0.4rem !important;
-    box-shadow: var(--shadow-sm) !important;
-    transition: border-color 0.15s, box-shadow 0.15s !important;
+    background: var(--surface) !important;
+    margin-bottom: 0.35rem !important;
+    box-shadow: none !important;
 }
 [data-testid="stExpander"]:hover {
     border-color: var(--border) !important;
-}
-[data-testid="stExpander"] summary {
-    font-weight: 500 !important;
-    font-size: 0.9rem !important;
-    padding: 0.75rem 1rem !important;
-}
-
-/* ── DataFrames ────────────────────────────────────────────────────────── */
-[data-testid="stDataFrame"] {
-    border: 1px solid var(--border-lt) !important;
-    border-radius: var(--radius) !important;
-    overflow: hidden !important;
     box-shadow: var(--shadow-sm) !important;
 }
 
-/* ── Alerts ────────────────────────────────────────────────────────────── */
+/* ── Tabs ──────────────────────────────────────────────────────────────── */
+[data-testid="stTabs"] [role="tablist"] {
+    border-bottom: 2px solid var(--border) !important;
+    gap: 0.25rem !important;
+}
+[data-testid="stTabs"] [role="tab"] {
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.04em !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0 !important;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: var(--navy) !important;
+    border-bottom: 2px solid var(--navy) !important;
+}
+
+/* ── Info / warning / error boxes ──────────────────────────────────────── */
 [data-testid="stAlert"] {
     border-radius: var(--radius) !important;
-    border-width: 1px !important;
     font-size: 0.875rem !important;
-}
-
-/* ── Divider ───────────────────────────────────────────────────────────── */
-hr {
-    border: none !important;
-    border-top: 1px solid var(--border-lt) !important;
-    margin: 1.75rem 0 !important;
-}
-
-/* ── Subheaders ────────────────────────────────────────────────────────── */
-[data-testid="stMarkdownContainer"] h3 {
-    font-size: 1.05rem !important;
-    margin-top: 0.25rem !important;
-    margin-bottom: 0.75rem !important;
-    padding-bottom: 0.4rem !important;
-    border-bottom: 1px solid var(--border-lt) !important;
-}
-
-/* ── Captions ──────────────────────────────────────────────────────────── */
-[data-testid="stCaptionContainer"],
-.stCaption {
-    color: var(--mid) !important;
-    font-size: 0.78rem !important;
-    line-height: 1.5 !important;
-}
-
-/* ── Checkboxes & radios ───────────────────────────────────────────────── */
-[data-testid="stCheckbox"] label,
-[data-testid="stRadio"] label {
-    font-size: 0.875rem !important;
-    color: var(--navy) !important;
-}
-
-/* ── Progress bar ──────────────────────────────────────────────────────── */
-[data-testid="stProgressBar"] > div {
-    background: var(--border-lt) !important;
-    border-radius: 99px !important;
-    height: 5px !important;
-}
-[data-testid="stProgressBar"] > div > div {
-    background: var(--navy) !important;
-    border-radius: 99px !important;
 }
 
 /* ── Project cards ─────────────────────────────────────────────────────── */
@@ -336,16 +283,15 @@ hr {
     background: var(--surface);
     border: 1px solid var(--border-lt);
     border-radius: var(--radius);
-    padding: 1.1rem 1.4rem;
-    margin-bottom: 0.5rem;
-    box-shadow: var(--shadow-sm);
-    transition: border-color 0.15s, box-shadow 0.15s;
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 0.6rem;
+    transition: box-shadow 0.2s, border-color 0.2s;
 }
 .proj-card:hover {
-    border-color: var(--navy);
     box-shadow: var(--shadow-md);
+    border-color: var(--border);
 }
-.proj-title {
+.proj-name {
     font-family: 'DM Serif Display', serif;
     font-size: 1.05rem;
     color: var(--navy);
@@ -395,10 +341,92 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
+# ── Supabase Auth helpers ──────────────────────────────────────────────────────
+
+def _supabase_creds():
+    url = os.environ.get("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", "")
+    key = os.environ.get("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY", "")
+    return url, key
+
+def _sign_in(email: str, password: str):
+    """Call Supabase Auth to sign in. Returns (user_dict, error_string)."""
+    url, key = _supabase_creds()
+    try:
+        r = httpx.post(
+            f"{url}/auth/v1/token?grant_type=password",
+            headers={"apikey": key, "Content-Type": "application/json"},
+            json={"email": email, "password": password},
+            timeout=10,
+        )
+        data = r.json()
+        if r.status_code == 200 and "access_token" in data:
+            return data, None
+        else:
+            msg = data.get("error_description") or data.get("msg") or "Login failed"
+            return None, msg
+    except Exception as e:
+        return None, str(e)
+
+def _sign_up(email: str, password: str):
+    """Register a new user. Returns (user_dict, error_string)."""
+    url, key = _supabase_creds()
+    try:
+        r = httpx.post(
+            f"{url}/auth/v1/signup",
+            headers={"apikey": key, "Content-Type": "application/json"},
+            json={"email": email, "password": password},
+            timeout=10,
+        )
+        data = r.json()
+        if r.status_code in (200, 201) and data.get("id"):
+            return data, None
+        else:
+            msg = data.get("msg") or data.get("error_description") or "Sign up failed"
+            return None, msg
+    except Exception as e:
+        return None, str(e)
+
+def _get_user_role(user_id: str, access_token: str) -> str:
+    """Look up whether this user is 'admin' or 'user'."""
+    url, key = _supabase_creds()
+    try:
+        r = httpx.get(
+            f"{url}/rest/v1/user_roles?user_id=eq.{user_id}&select=role",
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {access_token}",
+            },
+            timeout=10,
+        )
+        rows = r.json()
+        if rows:
+            return rows[0].get("role", "user")
+    except Exception:
+        pass
+    return "user"
+
+def _reset_password(email: str):
+    """Send a password reset email."""
+    url, key = _supabase_creds()
+    try:
+        r = httpx.post(
+            f"{url}/auth/v1/recover",
+            headers={"apikey": key, "Content-Type": "application/json"},
+            json={"email": email},
+            timeout=10,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
 # ── Session: initialise once ──────────────────────────────────────────────────
 if "initialised" not in st.session_state:
     st.session_state.update({
         "authenticated":          False,
+        "current_user_email":     "",
+        "current_user_id":        "",
+        "current_user_role":      "user",   # 'user' or 'admin'
+        "access_token":           "",
         "page_idx":               0,
         "project_id":             None,
         "project_name":           "",
@@ -416,10 +444,8 @@ if "initialised" not in st.session_state:
         "_last_total_cost":       0,
         "postcode_touched":       False,
         "_postcode_error":        "",
-        # Storeys — set on Project Setup, read by Building Config
         "storeys_above":          0,
         "storeys_below":          0,
-        # Building configuration
         "has_extension":          False,
         "ext_gia_per_floor_m2":   0.0,
         "ext_nia_per_floor_m2":   0.0,
@@ -436,8 +462,6 @@ if "initialised" not in st.session_state:
 # ═════════════════════════════════════════════════════════════════════════════
 # LOGIN GATE
 # ═════════════════════════════════════════════════════════════════════════════
-
-APP_PASSWORD = "CPC2026"   # ← change this
 
 if not st.session_state.authenticated:
 
@@ -469,18 +493,67 @@ if not st.session_state.authenticated:
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        pwd = st.text_input(
-            "Password",
-            type="password",
-            label_visibility="collapsed",
-            placeholder="Enter password"
-        )
-        if st.button("Sign In", type="primary", use_container_width=True):
-            if pwd == APP_PASSWORD:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Incorrect password")
+        # Tab between Sign In and Sign Up
+        login_tab, signup_tab = st.tabs(["Sign In", "Create Account"])
+
+        with login_tab:
+            email_in = st.text_input("Email", key="login_email", placeholder="you@company.com")
+            pwd_in   = st.text_input("Password", type="password", key="login_pwd", placeholder="Password")
+
+            if st.button("Sign In", type="primary", use_container_width=True, key="btn_signin"):
+                if not email_in or not pwd_in:
+                    st.error("Please enter your email and password.")
+                else:
+                    with st.spinner("Signing in..."):
+                        result, err = _sign_in(email_in.strip(), pwd_in)
+                    if err:
+                        st.error(f"❌ {err}")
+                    else:
+                        user = result.get("user", {})
+                        user_id = user.get("id", "")
+                        token   = result.get("access_token", "")
+                        role    = _get_user_role(user_id, token)
+                        st.session_state.authenticated      = True
+                        st.session_state.current_user_email = email_in.strip()
+                        st.session_state.current_user_id    = user_id
+                        st.session_state.current_user_role  = role
+                        st.session_state.access_token       = token
+                        st.rerun()
+
+            st.markdown("---")
+            forgot_email = st.text_input("Email for password reset", key="forgot_email",
+                                          placeholder="you@company.com")
+            if st.button("Send Password Reset Email", key="btn_reset"):
+                if forgot_email:
+                    ok = _reset_password(forgot_email.strip())
+                    if ok:
+                        st.success("✅ Reset email sent — check your inbox.")
+                    else:
+                        st.error("Could not send reset email. Check the address.")
+                else:
+                    st.warning("Enter your email above first.")
+
+        with signup_tab:
+            new_email = st.text_input("Email", key="signup_email", placeholder="you@company.com")
+            new_pwd   = st.text_input("Password (min 6 characters)", type="password",
+                                       key="signup_pwd", placeholder="Choose a password")
+            new_pwd2  = st.text_input("Confirm Password", type="password",
+                                       key="signup_pwd2", placeholder="Repeat password")
+
+            if st.button("Create Account", type="primary", use_container_width=True, key="btn_signup"):
+                if not new_email or not new_pwd:
+                    st.error("Please fill in all fields.")
+                elif new_pwd != new_pwd2:
+                    st.error("Passwords don't match.")
+                elif len(new_pwd) < 6:
+                    st.error("Password must be at least 6 characters.")
+                else:
+                    with st.spinner("Creating account..."):
+                        result, err = _sign_up(new_email.strip(), new_pwd)
+                    if err:
+                        st.error(f"❌ {err}")
+                    else:
+                        st.success("✅ Account created! You can now sign in.")
 
     st.stop()
 
@@ -500,7 +573,10 @@ except (KeyError, ValueError) as e:
     st.stop()
 
 # ── Page definitions ──────────────────────────────────────────────────────────
-PAGE_ICONS = ["🏠", "📋", "🏗️", "⚙️", "📊", "💾", "📚", "🔐"]
+PAGE_ICONS = ["🏠", "📋", "🏗️", "⚙️", "📊", "💾", "📚", "📥", "🚀"]
+
+# ── Admin pages (only visible to admins) ─────────────────────────────────────
+is_admin = st.session_state.get("current_user_role") == "admin"
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -522,7 +598,39 @@ with st.sidebar:
 
     st.markdown("---")
 
-    plain_labels = [f"{PAGE_ICONS[i]}  {PAGES[i]}" for i in range(len(PAGES))]
+    # Show user email + role badge in sidebar
+    role_colour = "#c8a84b" if is_admin else "#8a96a8"
+    role_label  = "Admin" if is_admin else "User"
+    st.markdown(
+        f"<div style='font-size:0.75rem;color:#8a96a8;margin-bottom:4px;'>"
+        f"Signed in as</div>"
+        f"<div style='font-size:0.8rem;color:#bcc6d8;margin-bottom:4px;'>"
+        f"{st.session_state.current_user_email}</div>"
+        f"<span style='background:{role_colour};color:#0d1b36;"
+        f"font-size:0.65rem;font-weight:700;letter-spacing:0.06em;"
+        f"text-transform:uppercase;padding:0.15rem 0.5rem;"
+        f"border-radius:4px;'>{role_label}</span>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+
+    # Build nav — filter admin pages for non-admin users
+    if is_admin:
+        nav_pages = list(PAGES)
+        nav_icons = list(PAGE_ICONS)
+    else:
+        # Non-admins only see the first 6 workflow pages + Rate Library (idx 6)
+        nav_pages = list(PAGES[:7])
+        nav_icons = list(PAGE_ICONS[:7])
+        
+    plain_labels = [f"{nav_icons[i]}  {nav_pages[i]}" for i in range(len(nav_pages))]
+
+    # Clamp page_idx to valid range for this user
+    max_idx = len(nav_pages) - 1
+    if st.session_state.page_idx > max_idx:
+        st.session_state.page_idx = 0
+
     selected = st.radio("nav", plain_labels, index=st.session_state.page_idx,
                         label_visibility="collapsed")
     new_idx = plain_labels.index(selected)
@@ -558,12 +666,17 @@ with st.sidebar:
         st.markdown("---")
 
     if st.button("Sign Out", use_container_width=True):
-        st.session_state.authenticated = False
+        # Clear auth state but keep app initialised
+        st.session_state.authenticated      = False
+        st.session_state.current_user_email = ""
+        st.session_state.current_user_id    = ""
+        st.session_state.current_user_role  = "user"
+        st.session_state.access_token       = ""
+        st.session_state.page_idx           = 0
         st.rerun()
 
 # ── Step progress bar ─────────────────────────────────────────────────────────
 def render_step_bar(current: int):
-    # Only show the estimating workflow steps (0-5), not Rate Library or Rate Submission
     workflow_pages = PAGES[:6]
     workflow_icons = PAGE_ICONS[:6]
     html = '<div class="step-bar">'
@@ -573,7 +686,6 @@ def render_step_bar(current: int):
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
-# Only show the step bar for the main estimating workflow (not Rate Library or Rate Submission)
 if st.session_state.page_idx < 6:
     render_step_bar(st.session_state.page_idx)
 
@@ -594,5 +706,9 @@ elif idx == 5:
     from app_pages.save_project import render; render(db)
 elif idx == 6:
     from app_pages.rate_library import render; render()
-elif idx == 7:
+elif idx == 7 and is_admin:
     from app_pages.admin_rate_submission import render; render()
+elif idx == 8 and is_admin:
+    from app_pages.admin_publish_rates import render; render()
+else:
+    st.warning("Page not found or access denied.")
