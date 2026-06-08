@@ -7,7 +7,7 @@ Kept in a standalone module to avoid circular imports between app.py and page mo
 
 import streamlit as st
 
-PAGES = ["Dashboard", "Project Setup", "Building Configuration", "Element Areas", "Cost Breakdown", "Save Project"]
+PAGES = ["Dashboard", "Project Setup", "Building Configuration", "Element Areas", "Cost Breakdown", "Save Project", "Rate Library", "Rate Submission"]
 
 
 def go_to(idx: int):
