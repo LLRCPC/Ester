@@ -3,11 +3,41 @@ session_helpers.py
 ------------------
 Shared session-state utilities used across app pages.
 Kept in a standalone module to avoid circular imports between app.py and page modules.
+
+Page index map:
+  0  Dashboard
+  1  Project Setup
+  2  Building Configuration
+  3  Element Areas
+  4  Cost Breakdown
+  5  Save Project
+  --- Admin ---
+  6  Rate Library
+  7  Rate Submission
+  8  Publish Rates
 """
 
 import streamlit as st
 
-PAGES = ["Dashboard", "Project Setup", "Building Configuration", "Element Areas", "Cost Breakdown", "Save Project", "Rate Library", "Rate Submission"]
+# Main workflow pages (shown in step bar)
+WORKFLOW_PAGES = [
+    "Dashboard",
+    "Project Setup",
+    "Building Configuration",
+    "Element Areas",
+    "Cost Breakdown",
+    "Save Project",
+]
+
+# Admin pages (grouped separately in sidebar)
+ADMIN_PAGES = [
+    "Rate Library",
+    "Rate Submission",
+    "Publish Rates",
+]
+
+# Combined list — index matches page_idx
+PAGES = WORKFLOW_PAGES + ADMIN_PAGES
 
 
 def go_to(idx: int):
@@ -34,7 +64,7 @@ def new_project():
         "nia_m2":                 0.0,
         "net_gross_pct":          0.0,
 
-        # Storeys — entered on project setup, read by building configuration
+        # Storeys
         "storeys_above":          0,
         "storeys_below":          0,
 
@@ -63,7 +93,9 @@ def new_project():
 
     # Clear per-element widget state
     for key in list(st.session_state.keys()):
-        if key.endswith("_unit") and key not in ("breakdown_unit", "unit_system", "area_unit", "building_unit"):
+        if key.endswith("_unit") and key not in (
+            "breakdown_unit", "unit_system", "area_unit", "building_unit"
+        ):
             del st.session_state[key]
         elif key.endswith("_area_input"):
             del st.session_state[key]
