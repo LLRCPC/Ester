@@ -359,10 +359,6 @@ def _sign_in(email: str, password: str):
             timeout=10,
         )
         data = r.json()
-        # DEBUG — show exactly what Supabase returns
-        st.write(f"DEBUG status: {r.status_code}")
-        st.write(f"DEBUG keys: {list(data.keys())}")
-        st.write(f"DEBUG data: {data}")
         if r.status_code == 200 and "access_token" in data:
             if "user" not in data and "id" in data:
                 data["user"] = {"id": data["id"], "email": data.get("email", email)}
@@ -384,18 +380,29 @@ def _sign_up(email: str, password: str):
             timeout=10,
         )
         data = r.json()
-        # DEBUG
-        st.write(f"DEBUG status: {r.status_code}")
-        st.write(f"DEBUG keys: {list(data.keys())}")
-        st.write(f"DEBUG data: {data}")
-        if r.status_code in (200, 201) and data.get("id"):
+        error_code = data.get("error_code", "")
+
+        # Success — new Supabase API returns access_token directly on sign up
+        if r.status_code in (200, 201) and (
+            data.get("access_token") or
+            data.get("id") or
+            data.get("user", {}).get("id")
+        ):
             return data, None
+
+        # Friendly error messages
+        if error_code == "user_already_exists":
+            return None, "An account with this email already exists — please sign in instead."
+        elif error_code == "weak_password":
+            return None, "Password is too weak — please choose a stronger one."
+        elif error_code == "invalid_email":
+            return None, "Please enter a valid email address."
         else:
-            msg = data.get("msg") or data.get("error_description") or "Sign up failed"
+            msg = data.get("msg") or data.get("error_description") or "Sign up failed — please try again."
             return None, msg
     except Exception as e:
         return None, str(e)
-    
+
 def _get_user_role(user_id: str, access_token: str) -> str:
     """Look up whether this user is 'admin' or 'user'."""
     url, key = _supabase_creds()
@@ -518,7 +525,6 @@ if not st.session_state.authenticated:
                     if err:
                         st.error(f"❌ {err}")
                     else:
-                        # Handle both Supabase response formats
                         user    = result.get("user") or result
                         user_id = user.get("id", "") or result.get("id", "")
                         token   = result.get("access_token", "")
