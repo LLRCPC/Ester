@@ -349,7 +349,7 @@ def _supabase_creds():
     return url, key
 
 def _sign_in(email: str, password: str):
-    """Call Supabase Auth to sign in. Returns (user_dict, error_string)."""
+    """Call Supabase Auth to sign in. Returns (data_dict, error_string)."""
     url, key = _supabase_creds()
     try:
         r = httpx.post(
@@ -360,6 +360,9 @@ def _sign_in(email: str, password: str):
         )
         data = r.json()
         if r.status_code == 200 and "access_token" in data:
+            # Supabase can return user at top level or nested under "user"
+            if "user" not in data and "id" in data:
+                data["user"] = {"id": data["id"], "email": data.get("email", email)}
             return data, None
         else:
             msg = data.get("error_description") or data.get("msg") or "Login failed"
@@ -425,7 +428,7 @@ if "initialised" not in st.session_state:
         "authenticated":          False,
         "current_user_email":     "",
         "current_user_id":        "",
-        "current_user_role":      "user",   # 'user' or 'admin'
+        "current_user_role":      "user",
         "access_token":           "",
         "page_idx":               0,
         "project_id":             None,
@@ -493,7 +496,6 @@ if not st.session_state.authenticated:
 
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        # Tab between Sign In and Sign Up
         login_tab, signup_tab = st.tabs(["Sign In", "Create Account"])
 
         with login_tab:
@@ -509,8 +511,9 @@ if not st.session_state.authenticated:
                     if err:
                         st.error(f"❌ {err}")
                     else:
-                        user = result.get("user", {})
-                        user_id = user.get("id", "")
+                        # Handle both Supabase response formats
+                        user    = result.get("user") or result
+                        user_id = user.get("id", "") or result.get("id", "")
                         token   = result.get("access_token", "")
                         role    = _get_user_role(user_id, token)
                         st.session_state.authenticated      = True
@@ -573,9 +576,10 @@ except (KeyError, ValueError) as e:
     st.stop()
 
 # ── Page definitions ──────────────────────────────────────────────────────────
+# 8 pages total: 6 workflow + 2 admin (Rate Library hidden)
 PAGE_ICONS = ["🏠", "📋", "🏗️", "⚙️", "📊", "💾", "📥", "🚀"]
 
-# ── Admin pages (only visible to admins) ─────────────────────────────────────
+# ── Admin check ───────────────────────────────────────────────────────────────
 is_admin = st.session_state.get("current_user_role") == "admin"
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -598,7 +602,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Show user email + role badge in sidebar
+    # Show user email + role badge
     role_colour = "#c8a84b" if is_admin else "#8a96a8"
     role_label  = "Admin" if is_admin else "User"
     st.markdown(
@@ -615,15 +619,14 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Build nav — filter admin pages for non-admin users
+    # Admins see all 8 pages; regular users see only the 6 workflow pages
     if is_admin:
         nav_pages = list(PAGES)
         nav_icons = list(PAGE_ICONS)
     else:
-        # Non-admins only see the 6 workflow pages
         nav_pages = list(PAGES[:6])
         nav_icons = list(PAGE_ICONS[:6])
-        
+
     plain_labels = [f"{nav_icons[i]}  {nav_pages[i]}" for i in range(len(nav_pages))]
 
     # Clamp page_idx to valid range for this user
@@ -666,7 +669,6 @@ with st.sidebar:
         st.markdown("---")
 
     if st.button("Sign Out", use_container_width=True):
-        # Clear auth state but keep app initialised
         st.session_state.authenticated      = False
         st.session_state.current_user_email = ""
         st.session_state.current_user_id    = ""
