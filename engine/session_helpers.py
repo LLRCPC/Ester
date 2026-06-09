@@ -11,10 +11,9 @@ Page index map:
   3  Element Areas
   4  Cost Breakdown
   5  Save Project
-  --- Admin ---
-  6  Rate Library
-  7  Rate Submission
-  8  Publish Rates
+  --- Admin only ---
+  6  Rate Submission
+  7  Publish Rates
 """
 
 import streamlit as st
@@ -31,7 +30,6 @@ WORKFLOW_PAGES = [
 
 # Admin pages (grouped separately in sidebar)
 ADMIN_PAGES = [
-    "Rate Library",
     "Rate Submission",
     "Publish Rates",
 ]

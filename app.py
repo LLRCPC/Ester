@@ -573,7 +573,7 @@ except (KeyError, ValueError) as e:
     st.stop()
 
 # ── Page definitions ──────────────────────────────────────────────────────────
-PAGE_ICONS = ["🏠", "📋", "🏗️", "⚙️", "📊", "💾", "📚", "📥", "🚀"]
+PAGE_ICONS = ["🏠", "📋", "🏗️", "⚙️", "📊", "💾", "📥", "🚀"]
 
 # ── Admin pages (only visible to admins) ─────────────────────────────────────
 is_admin = st.session_state.get("current_user_role") == "admin"
@@ -620,9 +620,9 @@ with st.sidebar:
         nav_pages = list(PAGES)
         nav_icons = list(PAGE_ICONS)
     else:
-        # Non-admins only see the first 6 workflow pages + Rate Library (idx 6)
-        nav_pages = list(PAGES[:7])
-        nav_icons = list(PAGE_ICONS[:7])
+        # Non-admins only see the 6 workflow pages
+        nav_pages = list(PAGES[:6])
+        nav_icons = list(PAGE_ICONS[:6])
         
     plain_labels = [f"{nav_icons[i]}  {nav_pages[i]}" for i in range(len(nav_pages))]
 
@@ -704,11 +704,9 @@ elif idx == 4:
     from app_pages.breakdown import render; render(db)
 elif idx == 5:
     from app_pages.save_project import render; render(db)
-elif idx == 6:
-    from app_pages.rate_library import render; render()
-elif idx == 7 and is_admin:
+elif idx == 6 and is_admin:
     from app_pages.admin_rate_submission import render; render()
-elif idx == 8 and is_admin:
+elif idx == 7 and is_admin:
     from app_pages.admin_publish_rates import render; render()
 else:
     st.warning("Page not found or access denied.")
