@@ -384,6 +384,10 @@ def _sign_up(email: str, password: str):
             timeout=10,
         )
         data = r.json()
+        # DEBUG
+        st.write(f"DEBUG status: {r.status_code}")
+        st.write(f"DEBUG keys: {list(data.keys())}")
+        st.write(f"DEBUG data: {data}")
         if r.status_code in (200, 201) and data.get("id"):
             return data, None
         else:
@@ -391,7 +395,7 @@ def _sign_up(email: str, password: str):
             return None, msg
     except Exception as e:
         return None, str(e)
-
+    
 def _get_user_role(user_id: str, access_token: str) -> str:
     """Look up whether this user is 'admin' or 'user'."""
     url, key = _supabase_creds()
