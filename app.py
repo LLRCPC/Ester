@@ -359,8 +359,11 @@ def _sign_in(email: str, password: str):
             timeout=10,
         )
         data = r.json()
+        # DEBUG — show exactly what Supabase returns
+        st.write(f"DEBUG status: {r.status_code}")
+        st.write(f"DEBUG keys: {list(data.keys())}")
+        st.write(f"DEBUG data: {data}")
         if r.status_code == 200 and "access_token" in data:
-            # Supabase can return user at top level or nested under "user"
             if "user" not in data and "id" in data:
                 data["user"] = {"id": data["id"], "email": data.get("email", email)}
             return data, None
