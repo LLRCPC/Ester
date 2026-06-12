@@ -1,5 +1,6 @@
 import streamlit as st
 from engine.project_store import save_project
+from engine.unit_engine import convert_area
 
 
 def render(db: dict):
@@ -46,18 +47,25 @@ def render(db: dict):
         elif location:
             st.caption(f"📍 {location}  ·  {quartile}")
 
+        # Areas — always shown in both units
         if gia > 0:
-            st.caption(f"GIA: {gia:,.0f} m²")
+            gia_ft2 = convert_area(gia, "m2", "ft2")
+            st.caption(f"GIA: {gia:,.0f} m²  ·  {gia_ft2:,.0f} ft²")
         if st.session_state.nia_m2 > 0:
-            from engine.unit_engine import convert_area
-            nia_ft2 = convert_area(st.session_state.nia_m2, "m2", "ft2")
-            st.caption(f"NIA: {nia_ft2:,.0f} ft²")
+            nia_m2  = st.session_state.nia_m2
+            nia_ft2 = convert_area(nia_m2, "m2", "ft2")
+            st.caption(f"NIA: {nia_m2:,.0f} m²  ·  {nia_ft2:,.0f} ft²")
 
     with col2:
         st.subheader("Cost Summary")
         st.metric("Total Fit-Out Cost", f"£{total_cost:,.0f}")
         if gia > 0 and total_cost > 0:
-            st.metric("£ / m² GIA", f"£{total_cost / gia:,.0f}")
+            m_a, m_b = st.columns(2)
+            with m_a:
+                st.metric("£ / m² GIA", f"£{total_cost / gia:,.0f}")
+            with m_b:
+                gia_ft2 = convert_area(gia, "m2", "ft2")
+                st.metric("£ / ft² GIA", f"£{total_cost / gia_ft2:,.2f}")
         n = sum(1 for v in st.session_state.element_areas_m2.values() if v > 0)
         st.caption(f"{n} element(s) costed")
 

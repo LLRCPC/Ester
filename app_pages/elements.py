@@ -28,8 +28,8 @@ def render(db: dict):
         Enter the area for each element.
 
         - **Public areas** default to **% of GIA**
-        - **Cat A fit out** defaults to **100% of NIA (ft²)**
-        - Manual override is always available
+        - **Cat A fit out** defaults to **100% of NIA**
+        - Manual override is always available, in **m² or ft²**
         """,
         unsafe_allow_html=True,
     )
@@ -117,7 +117,9 @@ def render(db: dict):
                             st.warning("Enter NIA on the Project Setup page.")
                         else:
                             st.caption(
-                                f"→ {convert_area(nia_m2, 'm2', 'ft2'):,.0f} ft² (100% of NIA)"
+                                f"→ {nia_m2:,.0f} m² / "
+                                f"{convert_area(nia_m2, 'm2', 'ft2'):,.0f} ft² "
+                                f"(100% of NIA)"
                             )
 
                     elif mode == "% of GIA":
@@ -131,8 +133,11 @@ def render(db: dict):
                             key=pct_key,
                         )
                         if pct > 0 and gia_m2 > 0:
-                            st.session_state.element_areas_m2[element_id] = (
-                                gia_m2 * (pct / 100)
+                            calc_m2 = gia_m2 * (pct / 100)
+                            st.session_state.element_areas_m2[element_id] = calc_m2
+                            st.caption(
+                                f"→ {calc_m2:,.0f} m² / "
+                                f"{convert_area(calc_m2, 'm2', 'ft2'):,.0f} ft²"
                             )
 
                     else:
@@ -166,6 +171,16 @@ def render(db: dict):
                             else convert_area(entered, "ft2", "m2")
                         )
 
+                        # Show the equivalent in the other unit
+                        saved_m2 = st.session_state.element_areas_m2[element_id]
+                        if saved_m2 > 0:
+                            alt = (
+                                f"{convert_area(saved_m2, 'm2', 'ft2'):,.0f} ft²"
+                                if unit == "m²"
+                                else f"{saved_m2:,.0f} m²"
+                            )
+                            st.caption(f"≈ {alt}")
+
                 with col_cost:
                     area_m2 = st.session_state.element_areas_m2[element_id]
 
@@ -177,10 +192,14 @@ def render(db: dict):
                         el_cost = area_m2 * rate
                         running_total += el_cost
                         st.markdown(f"**£{el_cost:,.0f}**")
+                        rate_ft2 = convert_rate(rate, "£/m2", "£/ft2")
+                        st.caption(
+                            f"£{rate:,.0f}/m² · £{rate_ft2:,.2f}/ft²"
+                        )
 
     # ── Footer ──────────────────────────────────────
     st.markdown("---")
-    col_a, col_b, col_c = st.columns(3)
+    col_a, col_b, col_c, col_d = st.columns(4)
 
     with col_a:
         st.metric("Subtotal", f"£{running_total:,.0f}")
@@ -188,6 +207,10 @@ def render(db: dict):
         if gia_m2 > 0 and running_total > 0:
             st.metric("Rate / m² GIA", f"£{running_total / gia_m2:,.0f}")
     with col_c:
+        if gia_m2 > 0 and running_total > 0:
+            gia_ft2 = convert_area(gia_m2, "m2", "ft2")
+            st.metric("Rate / ft² GIA", f"£{running_total / gia_ft2:,.2f}")
+    with col_d:
         n_entered = sum(v > 0 for v in st.session_state.element_areas_m2.values())
         st.metric("Elements entered", f"{n_entered} of {len(db['elements'])}")
 

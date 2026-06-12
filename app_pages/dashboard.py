@@ -1,6 +1,7 @@
 import streamlit as st
 from engine.project_store import list_projects, load_project, delete_project
 from engine.session_helpers import new_project
+from engine.unit_engine import convert_area
 
 
 def _restore_project(project_id: str):
@@ -70,7 +71,12 @@ def render(db: dict):
         col1, col2, col3, col4, col5 = st.columns([4, 2, 2, 1, 1])
 
         with col1:
-            gia_str = f"{proj['gia_m2']:,.0f} m²" if proj.get("gia_m2") else "—"
+            if proj.get("gia_m2"):
+                gia_m2  = proj["gia_m2"]
+                gia_ft2 = convert_area(gia_m2, "m2", "ft2")
+                gia_str = f"{gia_m2:,.0f} m² · {gia_ft2:,.0f} ft²"
+            else:
+                gia_str = "—"
             saved   = proj["saved_at"][:10] if proj.get("saved_at") else ""
             st.markdown(f"""
             <div class="proj-card">

@@ -55,7 +55,7 @@ def render(db: dict):
 
     st.session_state["_last_total_cost"] = total_cost
 
-    # ── Unit toggle ──────────────────────────────────
+    # ── Unit toggle (controls the detail table below) ─
     col_toggle, col_spacer = st.columns([2, 6])
     with col_toggle:
         unit = st.radio(
@@ -66,8 +66,8 @@ def render(db: dict):
             label_visibility="collapsed",
         )
 
-    # ── Headline metrics ─────────────────────────────
-    col1, col2, col3, col4 = st.columns(4)
+    # ── Headline metrics — both units always shown ───
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("Total Fit-Out Cost", f"£{total_cost:,.0f}")
     with col2:
@@ -76,13 +76,19 @@ def render(db: dict):
         else:
             st.metric("£ / m² GIA", "— enter GIA")
     with col3:
+        if gia > 0:
+            gia_ft2 = convert_area(gia, "m2", "ft2")
+            st.metric("£ / ft² GIA", f"£{total_cost / gia_ft2:,.2f}")
+        else:
+            st.metric("£ / ft² GIA", "— enter GIA")
+    with col4:
         n = sum(1 for v in st.session_state.element_areas_m2.values() if v > 0)
         st.metric("Elements costed", f"{n} of {len(elements)}")
-    with col4:
+    with col5:
         proj = st.session_state.project_name or "—"
         st.metric("Project", proj)
 
-    st.caption(f"📍 {location}  ·  {quartile}  ·  {unit} display")
+    st.caption(f"📍 {location}  ·  {quartile}  ·  table shown in {unit}")
     st.markdown("---")
 
     # ── Grouped table ────────────────────────────────
@@ -101,12 +107,19 @@ def render(db: dict):
         rows = []
 
         for el in cat_els:
+            # Both-unit values calculated once per element
+            area_m2  = el["area_m2"]
+            area_ft2 = convert_area(area_m2, "m2", "ft2")
+            rate_m2  = el["rate_gbp_m2"]
+            rate_ft2 = convert_rate(rate_m2, "£/m2", "£/ft2")
+
+            # On-screen table follows the toggle
             if unit == "m²":
-                area_d = el["area_m2"]
-                rate_d = el["rate_gbp_m2"]
+                area_d = area_m2
+                rate_d = rate_m2
             else:
-                area_d = convert_area(el["area_m2"], "m2", "ft2")
-                rate_d = convert_rate(el["rate_gbp_m2"], "£/m2", "£/ft2")
+                area_d = area_ft2
+                rate_d = rate_ft2
 
             rows.append({
                 "Element":    el["element_name"],
@@ -114,12 +127,16 @@ def render(db: dict):
                 rate_col:     f"£{rate_d:,.2f}",
                 "Total Cost": f"£{el['total_cost']:,.0f}",
             })
+
+            # CSV export always carries BOTH units
             all_rows.append({
-                "Category":       category,
-                "Element":        el["element_name"],
-                area_col:         round(area_d, 0),
-                rate_col:         round(rate_d, 2),
-                "Total Cost (£)": el["total_cost"],
+                "Category":        category,
+                "Element":         el["element_name"],
+                "Area (m²)":       round(area_m2, 0),
+                "Area (ft²)":      round(area_ft2, 0),
+                "Rate (£/m²)":     round(rate_m2, 2),
+                "Rate (£/ft²)":    round(rate_ft2, 2),
+                "Total Cost (£)":  el["total_cost"],
             })
 
         pct = (cat_total / total_cost * 100) if total_cost > 0 else 0
@@ -147,7 +164,7 @@ def render(db: dict):
         csv = pd.DataFrame(all_rows).to_csv(index=False)
         proj_slug = (st.session_state.project_name or "project").replace(" ", "_")
         st.download_button(
-            "⬇️ Download CSV",
+            "⬇️ Download CSV (m² + ft²)",
             data=csv,
             file_name=f"{proj_slug}_{location}_{quartile}.csv".replace(" ", "_"),
             mime="text/csv",
