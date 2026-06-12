@@ -5,17 +5,17 @@ Page: Admin — Publish Rates
 
 Shows all pending rate submissions. Admin can review each one,
 then publish it into the live rates table with auto-calculated
-quartile spread (±% from the submitted median rate).
+spec bands (Budget / Standard / High Spec / Bespoke).
 
 Phase 1 logic (1-4 projects):
-    Published as Median. Min/Max/Quartiles calculated as % spread.
+    Submitted rate anchored at its spec band; other bands derived.
 
 Phase 2 logic (5+ projects per element):
-    True statistical quartiles calculated from the dataset.
+    Bands calculated from real submitted data.
 
 The publish process:
     1. Creates a new rate_set (or adds to existing draft)
-    2. Writes rates rows for all 5 quartiles per element per location
+    2. Writes rates rows for all 4 spec bands per element per location
     3. Supersedes the previous published rate_set
     4. Marks the submission as 'approved'
 """
@@ -68,6 +68,20 @@ def _post(table: str, payload: dict) -> dict:
     return result[0] if isinstance(result, list) else result
 
 
+def _post_many(table: str, payloads: list, batch_size: int = 100) -> None:
+    """Insert many rows in batches (much faster than one POST per row)."""
+    url, key = _creds()
+    for i in range(0, len(payloads), batch_size):
+        batch = payloads[i:i + batch_size]
+        r = httpx.post(
+            f"{url}/rest/v1/{table}",
+            headers=_headers(key),
+            json=batch,
+            timeout=30,
+        )
+        r.raise_for_status()
+
+
 def _patch(table: str, row_id: str, payload: dict, id_col: str = "id") -> dict:
     url, key = _creds()
     r = httpx.patch(
@@ -115,7 +129,7 @@ def load_submission_rates(submission_id: str) -> pd.DataFrame:
 
 @st.cache_data(ttl=30)
 def load_all_approved_rates(location: str, element_id: str) -> list:
-    """Load all approved rates for a given element+location to calculate quartiles."""
+    """Load all approved rates for a given element+location to calculate spec bands."""
     # Get all approved submission IDs for this location
     submissions = _get(
         "submitted_projects",
@@ -144,27 +158,46 @@ def load_elements_lookup() -> dict:
     return {r["element_id"]: r for r in rows}
 
 
-# ── Quartile calculation ──────────────────────────────────────────────────────
+# ── Spec band calculation ─────────────────────────────────────────────────────
 
-QUARTILE_NAMES = ["Min", "Low quart", "Median", "Upper quart", "Max"]
+# The four published rate bands. These are written to the `quartile`
+# column of the rates table (the column keeps its old name to avoid a
+# database migration — only the VALUES stored in it have changed).
+SPEC_BANDS = ["Budget", "Standard", "High Spec", "Bespoke"]
 
-# Phase 1 spread percentages applied around the median
-# Min = -25%, Low quart = -12%, Median = 0%, Upper quart = +12%, Max = +25%
-PHASE1_SPREADS = {
-    "Min":         -0.25,
-    "Low quart":   -0.12,
-    "Median":       0.00,
-    "Upper quart": +0.12,
-    "Max":         +0.25,
+# Phase 1 ladder: each band as a multiple of the Standard rate.
+SPEC_FACTORS = {
+    "Budget":    0.75,
+    "Standard":  1.00,
+    "High Spec": 1.12,
+    "Bespoke":   1.25,
+}
+
+# Translation for legacy data published under the old quartile names.
+# "Low quart" is retired (Standard is taken from the old Median).
+LEGACY_TO_SPEC = {
+    "Min":         "Budget",
+    "Median":      "Standard",
+    "Upper quart": "High Spec",
+    "Max":         "Bespoke",
 }
 
 
-def calculate_quartiles(median_rate: float, all_rates: list) -> dict:
+def calculate_spec_bands(submitted_rate: float, all_rates: list,
+                         spec_level: str = "Standard") -> dict:
     """
-    Calculate 5 quartile values from available data.
-    
-    Phase 1 (fewer than 5 data points): apply fixed % spread around median.
-    Phase 2 (5+ data points): calculate true statistical quartiles.
+    Calculate the 4 spec-band rates (Budget / Standard / High Spec / Bespoke).
+
+    Phase 1 (fewer than 5 data points):
+        The submitted rate is anchored at the band matching the project's
+        spec level, and the other bands are derived from it using the
+        fixed factor ladder. A Bespoke project's rate therefore becomes
+        the Bespoke band exactly, with everything else built BELOW it —
+        no fictional rates are ever created above it.
+
+    Phase 2 (5+ data points): bands come from real submitted data:
+        Budget = lowest observed, Standard = median,
+        High Spec = 75th percentile, Bespoke = highest observed.
     """
     # Convert all rates to £/m2 for consistency
     numeric_rates = []
@@ -175,21 +208,23 @@ def calculate_quartiles(median_rate: float, all_rates: list) -> dict:
         numeric_rates.append(rate)
 
     if len(numeric_rates) >= 5:
-        # Phase 2 — true quartiles
+        # Phase 2 — bands from real data
         numeric_rates.sort()
         n = len(numeric_rates)
         return {
-            "Min":         round(numeric_rates[0], 2),
-            "Low quart":   round(numeric_rates[int(n * 0.25)], 2),
-            "Median":      round(numeric_rates[int(n * 0.50)], 2),
-            "Upper quart": round(numeric_rates[int(n * 0.75)], 2),
-            "Max":         round(numeric_rates[-1], 2),
+            "Budget":    round(numeric_rates[0], 2),
+            "Standard":  round(numeric_rates[int(n * 0.50)], 2),
+            "High Spec": round(numeric_rates[int(n * 0.75)], 2),
+            "Bespoke":   round(numeric_rates[-1], 2),
         }
     else:
-        # Phase 1 — spread around submitted median
+        # Phase 1 — anchor the submitted rate at its own spec band,
+        # derive the implied Standard rate, then apply the ladder.
+        anchor_factor = SPEC_FACTORS.get(spec_level, 1.00)
+        implied_standard = submitted_rate / anchor_factor
         return {
-            q: round(median_rate * (1 + spread), 2)
-            for q, spread in PHASE1_SPREADS.items()
+            band: round(implied_standard * factor, 2)
+            for band, factor in SPEC_FACTORS.items()
         }
 
 
@@ -198,23 +233,43 @@ def calculate_quartiles(median_rate: float, all_rates: list) -> dict:
 def publish_submission(submission_id: str, submission: dict, rates_df: pd.DataFrame, set_name: str):
     """
     Publish a submission into the live rates table.
-    
-    1. Supersede existing published rate set
-    2. Create new rate set
-    3. Write 5 quartile rows per element
-    4. Mark submission as approved
+
+    1. Read all rates from the current live rate set (so nothing is lost)
+    2. Supersede the existing published rate set
+    3. Create a new rate set
+    4. Carry forward all existing rates EXCEPT the element+location
+       combinations being republished by this submission
+    5. Write 4 fresh spec band rows per element from this submission
+    6. Mark submission as approved
+
+    This means each publish UPDATES the live rates rather than
+    REPLACING them — rates for other locations and other elements
+    are preserved.
     """
     location = submission["location"]
+    spec_level = submission.get("spec_level") or "Standard"
     elements_lookup = load_elements_lookup()
 
     with st.spinner("Publishing rates to estimating engine..."):
 
-        # ── Step 1: Supersede existing published rate set ─────────────────────
-        existing = _get(
+        # ── Step 1: Read existing live rates BEFORE superseding ──────────────
+        existing_sets = _get(
             "rate_sets",
-            "is_draft=eq.false&superseded_at=is.null&select=rate_set_id"
+            "is_draft=eq.false&superseded_at=is.null"
+            "&order=published_at.desc&select=rate_set_id"
         )
-        for old_set in existing:
+
+        carried_rates = []
+        if existing_sets:
+            current_set_id = existing_sets[0]["rate_set_id"]
+            carried_rates = _get(
+                "rates",
+                f"rate_set_id=eq.{current_set_id}"
+                "&select=element_id,location,quartile,rate,rate_unit"
+            )
+
+        # ── Step 2: Supersede existing published rate set(s) ─────────────────
+        for old_set in existing_sets:
             _patch(
                 "rate_sets",
                 old_set["rate_set_id"],
@@ -222,7 +277,7 @@ def publish_submission(submission_id: str, submission: dict, rates_df: pd.DataFr
                 id_col="rate_set_id"
             )
 
-        # ── Step 2: Create new rate set ───────────────────────────────────────
+        # ── Step 3: Create new rate set ───────────────────────────────────────
         new_set = _post("rate_sets", {
             "set_name":     set_name,
             "notes":        f"Published from submission: {submission['project_name']}",
@@ -232,9 +287,11 @@ def publish_submission(submission_id: str, submission: dict, rates_df: pd.DataFr
         })
         new_rate_set_id = new_set["rate_set_id"]
 
-        # ── Step 3: Write 5 quartile rows per element ─────────────────────────
-        published_count = 0
+        # ── Step 4: Build the new rows for this submission ───────────────────
+        new_rows        = []
+        replaced_keys   = set()   # (element_id, location) pairs being updated
         skipped_pct     = 0
+        skipped_zero    = 0
 
         for _, rate_row in rates_df.iterrows():
             element_id = rate_row["element_id"]
@@ -247,38 +304,79 @@ def publish_submission(submission_id: str, submission: dict, rates_df: pd.DataFr
 
             # Convert submitted rate to £/m2
             submitted_rate = float(rate_row["rate"])
+
+            # Skip rates of zero — these happen when an area (e.g. NIA)
+            # was missing at submission time, so no rate was calculable.
+            # Publishing them would push £0.00 into the live engine.
+            if submitted_rate <= 0:
+                skipped_zero += 1
+                continue
+
             if rate_unit == "£/ft2":
                 median_rate = submitted_rate * 10.764
-                publish_unit = "£/m2"
             else:
                 median_rate = submitted_rate
-                publish_unit = "£/m2"
+            publish_unit = "£/m2"
 
             # Load all historical rates for this element+location
             all_historical = load_all_approved_rates(location, element_id)
 
-            # Calculate 5 quartile values
-            quartiles = calculate_quartiles(median_rate, all_historical)
+            # Calculate the 4 spec-band rates, anchored to the project's spec level
+            bands = calculate_spec_bands(median_rate, all_historical, spec_level)
 
-            # Write one row per quartile
-            for quartile_name, quartile_rate in quartiles.items():
-                _post("rates", {
+            replaced_keys.add((element_id, location))
+
+            for band_name, band_rate in bands.items():
+                new_rows.append({
                     "rate_set_id": new_rate_set_id,
                     "element_id":  element_id,
                     "location":    location,
-                    "quartile":    quartile_name,
-                    "rate":        quartile_rate,
+                    "quartile":    band_name,   # column keeps legacy name; value is the spec band
+                    "rate":        band_rate,
                     "rate_unit":   publish_unit,
                 })
-                published_count += 1
 
-        # ── Step 4: Mark submission as approved ───────────────────────────────
+        # ── Step 5: Carry forward rates not replaced by this submission ──────
+        # Legacy rows published under the old quartile names are translated
+        # to the new spec bands here (Min→Budget, Median→Standard,
+        # Upper quart→High Spec, Max→Bespoke). Old "Low quart" rows are
+        # dropped — that band no longer exists.
+        carried_rows = []
+        for old in carried_rates:
+            key = (old.get("element_id"), old.get("location"))
+            if key in replaced_keys:
+                continue  # being replaced by fresh rates above
+
+            band = old.get("quartile")
+            if band not in SPEC_BANDS:
+                band = LEGACY_TO_SPEC.get(band)  # translate old names
+                if band is None:
+                    continue  # retired band (e.g. "Low quart") — drop it
+
+            carried_rows.append({
+                "rate_set_id": new_rate_set_id,
+                "element_id":  old.get("element_id"),
+                "location":    old.get("location"),
+                "quartile":    band,
+                "rate":        old.get("rate"),
+                "rate_unit":   old.get("rate_unit"),
+            })
+
+        # ── Step 6: Write everything in batches ──────────────────────────────
+        all_rows = new_rows + carried_rows
+        if all_rows:
+            _post_many("rates", all_rows)
+
+        published_count = len(new_rows)
+        carried_count   = len(carried_rows)
+
+        # ── Step 7: Mark submission as approved ───────────────────────────────
         _patch("submitted_projects", submission_id, {"status": "approved"})
 
     # Clear caches so estimating engine picks up new rates immediately
     st.cache_data.clear()
 
-    return published_count, skipped_pct, new_rate_set_id
+    return published_count, skipped_pct, skipped_zero, carried_count, new_rate_set_id
 
 
 # ── Render helpers ────────────────────────────────────────────────────────────
@@ -354,17 +452,23 @@ def _render_submission_detail(submission_id: str, submission: dict):
 
     st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-    # Quartile preview
+    # Spec band preview
+    spec_level = submission.get("spec_level") or "Standard"
     st.markdown("---")
     st.markdown(
-        "<div style='font-size:0.85rem;font-weight:600;color:#0f1f3d;"
-        "margin-bottom:0.5rem;'>Quartile spread preview (Phase 1 — ±25% around median)</div>",
+        f"<div style='font-size:0.85rem;font-weight:600;color:#0f1f3d;"
+        f"margin-bottom:0.5rem;'>Spec band preview "
+        f"(Phase 1 — submitted rate anchored at "
+        f"<span style='color:#c8a84b;'>{spec_level}</span>)</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
         "<div style='font-size:0.78rem;color:#8a96a8;margin-bottom:0.75rem;'>"
-        "Once 5+ projects are submitted for this location, true statistical "
-        "quartiles will be calculated automatically.</div>",
+        "The submitted rate becomes the band matching this project's spec "
+        "level, and the other bands are derived from it — e.g. a Bespoke "
+        "project's rate becomes the Bespoke band, with the bands below built "
+        "from it only. Once 5+ projects are submitted for this location, "
+        "bands will be calculated from real data automatically.</div>",
         unsafe_allow_html=True,
     )
 
@@ -377,14 +481,13 @@ def _render_submission_detail(submission_id: str, submission: dict):
         rate   = float(r["rate"])
         unit   = r.get("rate_unit", "£/m2")
         m2rate = rate * 10.764 if unit == "£/ft2" else rate
-        qs     = calculate_quartiles(m2rate, [])
+        qs     = calculate_spec_bands(m2rate, [], spec_level)
         preview_rows.append({
-            "Element":     r.get("element_name", r["element_id"]),
-            "Min":         f"£{qs['Min']:,.2f}",
-            "Low Quart":   f"£{qs['Low quart']:,.2f}",
-            "Median":      f"£{qs['Median']:,.2f}",
-            "Upper Quart": f"£{qs['Upper quart']:,.2f}",
-            "Max":         f"£{qs['Max']:,.2f}",
+            "Element":   r.get("element_name", r["element_id"]),
+            "Budget":    f"£{qs['Budget']:,.2f}",
+            "Standard":  f"£{qs['Standard']:,.2f}",
+            "High Spec": f"£{qs['High Spec']:,.2f}",
+            "Bespoke":   f"£{qs['Bespoke']:,.2f}",
         })
         shown += 1
 
@@ -418,20 +521,26 @@ def _render_submission_detail(submission_id: str, submission: dict):
             use_container_width=True,
         ):
             try:
-                count, skipped, new_id = publish_submission(
+                count, skipped, skipped_zero, carried, new_id = publish_submission(
                     submission_id, submission, rates_df, set_name
                 )
                 st.success(
                     f"✅ Published successfully! "
-                    f"{count} rate rows written across 5 quartiles. "
+                    f"{count} new rate rows written across 4 spec bands. "
+                    f"{carried} existing rate rows carried forward. "
                     f"{skipped} percentage-based items skipped. "
                     f"Rate set ID: `{new_id}`"
                 )
+                if skipped_zero:
+                    st.warning(
+                        f"⚠️ {skipped_zero} element(s) were skipped because their "
+                        f"submitted rate was £0 (usually caused by a missing GIA/NIA "
+                        f"at submission time). These were NOT published."
+                    )
                 st.info(
                     "The estimating engine will use these rates immediately. "
-                    "Reload the app if you don't see the update."
+                    "Refresh or change page to see the updated status badge."
                 )
-                st.rerun()
             except Exception as e:
                 st.error(f"❌ Publish failed: {e}")
 

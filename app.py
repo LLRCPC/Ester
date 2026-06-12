@@ -451,7 +451,7 @@ if "initialised" not in st.session_state:
         "nia_m2":                 0.0,
         "location":               "",
         "postcode":               "",
-        "quartile":               "Median",
+        "quartile":               "Standard",  # holds the spec level (key name kept for compatibility)
         "spec_level":             "Standard",
         "building_type":          "Office",
         "refurb_scope":           "Full Strip Out",

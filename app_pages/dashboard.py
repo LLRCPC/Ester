@@ -1,6 +1,6 @@
 import streamlit as st
 from engine.project_store import list_projects, load_project, delete_project
-from engine.session_helpers import new_project
+from engine.session_helpers import new_project, resolve_spec
 from engine.unit_engine import convert_area
 
 
@@ -17,7 +17,7 @@ def _restore_project(project_id: str):
     st.session_state.gia_m2           = data.get("gia_m2", 0.0)
     st.session_state.nia_m2           = data.get("nia_m2", 0.0)
     st.session_state.location         = data.get("location", "")
-    st.session_state.quartile         = data.get("quartile", "Median")
+    st.session_state.quartile         = resolve_spec(data.get("quartile", "Standard"))
     st.session_state.element_areas_m2 = data.get("element_areas_m2", {})
     st.session_state._last_total_cost  = data.get("total_cost", 0)
     st.session_state.page_idx = 4   # Cost Breakdown is now page 4

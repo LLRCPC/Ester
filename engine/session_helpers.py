@@ -18,6 +18,26 @@ Page index map:
 
 import streamlit as st
 
+# ── Spec levels (replace the old quartile bands) ──────────────────────────────
+SPEC_LEVELS = ["Budget", "Standard", "High Spec", "Bespoke"]
+
+# Old saved projects / old published rates may still use the legacy
+# quartile names — translate them to the new spec bands.
+LEGACY_TO_SPEC = {
+    "min": "Budget",
+    "low quart": "Standard",
+    "median": "Standard",
+    "upper quart": "High Spec",
+    "max": "Bespoke",
+}
+
+
+def resolve_spec(value: str) -> str:
+    """Return a valid spec band, translating legacy quartile names."""
+    v = (value or "").strip()
+    return LEGACY_TO_SPEC.get(v.lower(), v) or "Standard"
+
+
 # Main workflow pages (shown in step bar)
 WORKFLOW_PAGES = [
     "Dashboard",
@@ -54,7 +74,7 @@ def new_project():
         "project_name":           "",
         "postcode":               "",
         "location":               "",
-        "quartile":               "Median",
+        "quartile":               "Standard",   # holds the spec level (key name kept for saved-project compatibility)
         "fitout_scope":           "Whole building",
 
         # Areas

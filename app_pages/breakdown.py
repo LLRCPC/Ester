@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from engine.breakdown_engine import calculate_cost_breakdown
+from engine.session_helpers import resolve_spec
 from engine.unit_engine import convert_area, convert_rate
 
 
@@ -35,7 +36,7 @@ def render(db: dict):
         return
 
     location = st.session_state.location
-    quartile = st.session_state.quartile
+    spec_level = resolve_spec(st.session_state.quartile)
     gia      = st.session_state.gia_m2
 
     # ── Calculate ────────────────────────────────────
@@ -43,7 +44,7 @@ def render(db: dict):
         result = calculate_cost_breakdown(
             db=db,
             location=location,
-            quartile=quartile,
+            spec_level=spec_level,
             element_areas_m2=st.session_state.element_areas_m2,
         )
     except ValueError as e:
@@ -88,7 +89,7 @@ def render(db: dict):
         proj = st.session_state.project_name or "—"
         st.metric("Project", proj)
 
-    st.caption(f"📍 {location}  ·  {quartile}  ·  table shown in {unit}")
+    st.caption(f"📍 {location}  ·  {spec_level} spec  ·  table shown in {unit}")
     st.markdown("---")
 
     # ── Grouped table ────────────────────────────────
@@ -166,7 +167,7 @@ def render(db: dict):
         st.download_button(
             "⬇️ Download CSV (m² + ft²)",
             data=csv,
-            file_name=f"{proj_slug}_{location}_{quartile}.csv".replace(" ", "_"),
+            file_name=f"{proj_slug}_{location}_{spec_level}.csv".replace(" ", "_"),
             mime="text/csv",
             use_container_width=True,
         )

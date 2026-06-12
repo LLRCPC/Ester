@@ -6,7 +6,7 @@ DEFAULTS = {
     "project_id": None,
     "project_name": "",
     "location": "London",   # ✅ safe default (no blank state ever)
-    "quartile": "Median",
+    "quartile": "Standard",  # holds the spec level (key name kept for compatibility)
     "gia_m2": 0.0,
     "nia_m2": 0.0,
     "element_areas_m2": {},
