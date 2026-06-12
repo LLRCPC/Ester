@@ -58,7 +58,7 @@ def save_project(project_data: dict) -> str:
         "project_name":     project_data.get("project_name", "Untitled"),
         "postcode":         project_data.get("postcode", ""),
         "location":         project_data.get("location", ""),
-        "quartile":         project_data.get("quartile", "Median"),
+        "quartile":         project_data.get("quartile", "Standard"),
         "gia_m2":           project_data.get("gia_m2", 0) or 0,
         "nia_m2":           project_data.get("nia_m2", 0) or 0,
         "element_areas_m2": project_data.get("element_areas_m2", {}) or {},

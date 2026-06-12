@@ -379,7 +379,9 @@ def _render_cost_entry(elements_df: pd.DataFrame):
         st.session_state.ars_unit = unit
 
     logged = len([v for v in st.session_state.ars_rates.values()
-                  if v.get("total_cost", 0) > 0 or v.get("pct", 0) > 0])
+                  if (v.get("total_cost") or 0) > 0
+                  or (v.get("pct") or 0) > 0
+                  or v.get("na")])
     total  = len(elements_df)
 
     with col_progress:
@@ -394,7 +396,9 @@ def _render_cost_entry(elements_df: pd.DataFrame):
         "<p style='color:#8a96a8;font-size:0.88rem;margin-bottom:0.5rem;'>"
         "Enter the <b>total cost (£)</b> for each element from your cost plan. "
         "The £/m² rate is calculated automatically using "
-        "GIA or NIA as appropriate. Leave blank to skip.</p>",
+        "GIA or NIA as appropriate. Leave blank to skip, or tick "
+        "<b>N/A</b> if the element doesn't exist on this project — "
+        "N/A is recorded so we learn how often each element occurs.</p>",
         unsafe_allow_html=True,
     )
 
@@ -426,12 +430,9 @@ def _render_cost_entry(elements_df: pd.DataFrame):
 
         cat_logged = sum(
             1 for _, row in cat_df.iterrows()
-            if st.session_state.ars_rates.get(
-                row["element_id"], {}
-            ).get("total_cost", 0) > 0
-            or st.session_state.ars_rates.get(
-                row["element_id"], {}
-            ).get("pct", 0) > 0
+            if (st.session_state.ars_rates.get(row["element_id"], {}).get("total_cost") or 0) > 0
+            or (st.session_state.ars_rates.get(row["element_id"], {}).get("pct") or 0) > 0
+            or st.session_state.ars_rates.get(row["element_id"], {}).get("na")
         )
         cat_total = len(cat_df)
 
@@ -464,63 +465,96 @@ def _render_cost_entry(elements_df: pd.DataFrame):
 
             if is_pct:
                 # ── On Costs — percentage entry ───────────────────────────────
-                existing_pct = existing.get("pct", 0.0)
-                is_entered   = existing_pct > 0
-                badge        = "✓ " if is_entered else ""
-                hint         = f" — {existing_pct:.2f}%" if is_entered else ""
+                existing_pct = existing.get("pct", 0.0) or 0.0
+                is_na        = existing.get("na", False)
+                is_entered   = existing_pct > 0 or is_na
+                badge        = "✓ " if existing_pct > 0 else ("－ " if is_na else "")
+                hint         = (" — N/A" if is_na
+                                else f" — {existing_pct:.2f}%" if existing_pct > 0
+                                else "")
 
                 with st.expander(f"{badge}{element_id}  {element_name}{hint}"):
-                    c1, c2, c3 = st.columns([2, 2, 3])
-                    with c1:
-                        pct_val = st.number_input(
-                            "Percentage (%)",
-                            min_value=0.0, max_value=100.0,
-                            step=0.1, format="%.2f",
-                            value=float(existing_pct),
-                            key=f"ars_pct_{element_id}",
-                        )
-                    with c2:
-                        pkg_val = st.selectbox(
-                            "Package",
-                            PACKAGES + ["Both"],
-                            index=(PACKAGES + ["Both"]).index(
-                                existing.get("package", PACKAGES[0])
-                            ) if existing.get("package") in PACKAGES + ["Both"] else 0,
-                            key=f"ars_pkg_{element_id}",
-                        )
-                    with c3:
+                    na_val = st.checkbox(
+                        "N/A — this element is not applicable to this project",
+                        value=is_na,
+                        key=f"ars_na_{element_id}",
+                        help="Marks the element as not applicable. No rate is "
+                             "published, and the N/A is recorded so we can track "
+                             "how often each element actually occurs.",
+                    )
+
+                    if na_val:
                         notes_val = st.text_input(
-                            "Notes",
+                            "Notes (optional — e.g. why it doesn't apply)",
                             value=existing.get("notes", ""),
                             placeholder="Optional...",
                             key=f"ars_notes_{element_id}",
-                            label_visibility="collapsed",
                         )
-
-                    if pct_val > 0:
                         st.session_state.ars_rates[element_id] = {
-                            "pct":        pct_val,
+                            "na":         True,
+                            "pct":        None,
                             "rate_m2":    None,
-                            "rate_unit":  "%",
+                            "rate_unit":  "N/A",
                             "total_cost": None,
-                            "package":    pkg_val,
+                            "package":    existing.get("package", PACKAGES[0]),
                             "notes":      notes_val or None,
                         }
-                    elif element_id in st.session_state.ars_rates:
-                        del st.session_state.ars_rates[element_id]
+                    else:
+                        c1, c2, c3 = st.columns([2, 2, 3])
+                        with c1:
+                            pct_val = st.number_input(
+                                "Percentage (%)",
+                                min_value=0.0, max_value=100.0,
+                                step=0.1, format="%.2f",
+                                value=float(existing_pct),
+                                key=f"ars_pct_{element_id}",
+                            )
+                        with c2:
+                            pkg_val = st.selectbox(
+                                "Package",
+                                PACKAGES + ["Both"],
+                                index=(PACKAGES + ["Both"]).index(
+                                    existing.get("package", PACKAGES[0])
+                                ) if existing.get("package") in PACKAGES + ["Both"] else 0,
+                                key=f"ars_pkg_{element_id}",
+                            )
+                        with c3:
+                            notes_val = st.text_input(
+                                "Notes",
+                                value=existing.get("notes", ""),
+                                placeholder="Optional...",
+                                key=f"ars_notes_{element_id}",
+                                label_visibility="collapsed",
+                            )
+
+                        if pct_val > 0:
+                            st.session_state.ars_rates[element_id] = {
+                                "na":         False,
+                                "pct":        pct_val,
+                                "rate_m2":    None,
+                                "rate_unit":  "%",
+                                "total_cost": None,
+                                "package":    pkg_val,
+                                "notes":      notes_val or None,
+                            }
+                        elif element_id in st.session_state.ars_rates:
+                            del st.session_state.ars_rates[element_id]
 
             else:
                 # ── Standard elements — total cost entry ──────────────────────
-                existing_cost = existing.get("total_cost", 0.0)
-                is_entered    = existing_cost > 0
-                badge         = "✓ " if is_entered else ""
+                existing_cost = existing.get("total_cost", 0.0) or 0.0
+                is_na         = existing.get("na", False)
+                is_entered    = existing_cost > 0 or is_na
+                badge         = "✓ " if existing_cost > 0 else ("－ " if is_na else "")
 
                 # Show calculated rate in expander header if entered
                 rate_hint = ""
-                if is_entered and area_m2 > 0:
+                if is_na:
+                    rate_hint = " — N/A"
+                elif existing_cost > 0 and area_m2 > 0:
                     rate_m2   = existing_cost / area_m2
                     rate_hint = f" — £{rate_m2:,.2f}/m²"
-                elif is_entered:
+                elif existing_cost > 0:
                     rate_hint = f" — £{existing_cost:,.0f} total"
 
                 basis_label = _area_basis_label(
@@ -537,75 +571,102 @@ def _render_cost_entry(elements_df: pd.DataFrame):
                         unsafe_allow_html=True,
                     )
 
-                    c1, c2, c3 = st.columns([2, 2, 3])
+                    na_val = st.checkbox(
+                        "N/A — this element is not applicable to this project",
+                        value=is_na,
+                        key=f"ars_na_{element_id}",
+                        help="Marks the element as not applicable (e.g. no basement, "
+                             "no lifts). No rate is published, and the N/A is recorded "
+                             "so we can track how often each element actually occurs.",
+                    )
 
-                    with c1:
-                        cost_val = st.number_input(
-                            "Total cost (£)",
-                            min_value=0.0,
-                            step=1000.0,
-                            format="%.0f",
-                            value=float(existing_cost),
-                            key=f"ars_cost_{element_id}",
-                        )
-
-                    with c2:
-                        pkg_val = st.selectbox(
-                            "Package",
-                            PACKAGES,
-                            index=PACKAGES.index(
-                                existing.get("package", PACKAGES[0])
-                            ) if existing.get("package") in PACKAGES else 0,
-                            key=f"ars_pkg_{element_id}",
-                        )
-
-                    with c3:
+                    if na_val:
                         notes_val = st.text_input(
-                            "Notes",
+                            "Notes (optional — e.g. why it doesn't apply)",
                             value=existing.get("notes", ""),
                             placeholder="Optional...",
                             key=f"ars_notes_{element_id}",
-                            label_visibility="collapsed",
                         )
-
-                    # Calculate and display rate
-                    if cost_val > 0:
-                        if area_m2 > 0:
-                            rate_m2 = cost_val / area_m2
-                            col_calc, _ = st.columns([2, 2])
-                            with col_calc:
-                                st.markdown(
-                                    f"""<div style="background:#f5f4f0;
-                                        border:1px solid #e4e0d8;border-radius:6px;
-                                        padding:0.6rem 0.9rem;margin-top:0.25rem;">
-                                        <div style="font-size:0.7rem;color:#8a96a8;
-                                        text-transform:uppercase;letter-spacing:0.06em;">
-                                        Calculated rate</div>
-                                        <div style="font-family:'DM Serif Display',serif;
-                                        font-size:1.2rem;color:#0f1f3d;">
-                                        £{rate_m2:,.2f} / m²</div>
-                                        <div style="font-size:0.72rem;color:#8a96a8;">
-                                        £{cost_val:,.0f} ÷ {area_m2:,.0f} m² {basis}</div>
-                                    </div>""",
-                                    unsafe_allow_html=True,
-                                )
-                        else:
-                            rate_m2 = None
-                            st.warning(
-                                f"⚠️ {basis} is 0 — rate cannot be calculated. "
-                                f"Go back to Step 1 and enter the {basis}."
-                            )
-
                         st.session_state.ars_rates[element_id] = {
-                            "total_cost": cost_val,
-                            "rate_m2":    rate_m2,
-                            "rate_unit":  "£/m2",
+                            "na":         True,
+                            "total_cost": None,
+                            "rate_m2":    None,
+                            "rate_unit":  "N/A",
                             "pct":        None,
-                            "package":    pkg_val,
+                            "package":    existing.get("package", PACKAGES[0]),
                             "notes":      notes_val or None,
                         }
-                    elif element_id in st.session_state.ars_rates:
-                        del st.session_state.ars_rates[element_id]
+                    else:
+                        c1, c2, c3 = st.columns([2, 2, 3])
+
+                        with c1:
+                            cost_val = st.number_input(
+                                "Total cost (£)",
+                                min_value=0.0,
+                                step=1000.0,
+                                format="%.0f",
+                                value=float(existing_cost),
+                                key=f"ars_cost_{element_id}",
+                            )
+
+                        with c2:
+                            pkg_val = st.selectbox(
+                                "Package",
+                                PACKAGES,
+                                index=PACKAGES.index(
+                                    existing.get("package", PACKAGES[0])
+                                ) if existing.get("package") in PACKAGES else 0,
+                                key=f"ars_pkg_{element_id}",
+                            )
+
+                        with c3:
+                            notes_val = st.text_input(
+                                "Notes",
+                                value=existing.get("notes", ""),
+                                placeholder="Optional...",
+                                key=f"ars_notes_{element_id}",
+                                label_visibility="collapsed",
+                            )
+
+                        # Calculate and display rate
+                        if cost_val > 0:
+                            if area_m2 > 0:
+                                rate_m2 = cost_val / area_m2
+                                col_calc, _ = st.columns([2, 2])
+                                with col_calc:
+                                    st.markdown(
+                                        f"""<div style="background:#f5f4f0;
+                                            border:1px solid #e4e0d8;border-radius:6px;
+                                            padding:0.6rem 0.9rem;margin-top:0.25rem;">
+                                            <div style="font-size:0.7rem;color:#8a96a8;
+                                            text-transform:uppercase;letter-spacing:0.06em;">
+                                            Calculated rate</div>
+                                            <div style="font-family:'DM Serif Display',serif;
+                                            font-size:1.2rem;color:#0f1f3d;">
+                                            £{rate_m2:,.2f} / m²</div>
+                                            <div style="font-size:0.72rem;color:#8a96a8;">
+                                            £{cost_val:,.0f} ÷ {area_m2:,.0f} m² {basis}</div>
+                                        </div>""",
+                                        unsafe_allow_html=True,
+                                    )
+                            else:
+                                rate_m2 = None
+                                st.warning(
+                                    f"⚠️ {basis} is 0 — rate cannot be calculated. "
+                                    f"Go back to Step 1 and enter the {basis}."
+                                )
+
+                            st.session_state.ars_rates[element_id] = {
+                                "na":         False,
+                                "total_cost": cost_val,
+                                "rate_m2":    rate_m2,
+                                "rate_unit":  "£/m2",
+                                "pct":        None,
+                                "package":    pkg_val,
+                                "notes":      notes_val or None,
+                            }
+                        elif element_id in st.session_state.ars_rates:
+                            del st.session_state.ars_rates[element_id]
 
     st.markdown("---")
 
@@ -617,7 +678,9 @@ def _render_cost_entry(elements_df: pd.DataFrame):
     with col_next:
         entered_count = len([
             v for v in st.session_state.ars_rates.values()
-            if v.get("total_cost", 0) > 0 or v.get("pct", 0) > 0
+            if (v.get("total_cost") or 0) > 0
+            or (v.get("pct") or 0) > 0
+            or v.get("na")
         ])
         if st.button(
             "Review & Submit →",
@@ -696,7 +759,18 @@ def _render_review(elements_df: pd.DataFrame):
         name     = el.get("element_name", element_id) if isinstance(el, dict) else element_id
         basis    = _area_basis(category)
 
-        if data.get("rate_unit") == "%":
+        if data.get("na"):
+            rows.append({
+                "ID":            element_id,
+                "Element":       name,
+                "Package":       data.get("package", "—"),
+                "Total Cost":    "—",
+                "Basis":         "—",
+                "Rate (£/m²)":   "N/A",
+                "Entry":         "Not applicable",
+                "Notes":         data.get("notes") or "—",
+            })
+        elif data.get("rate_unit") == "%":
             rows.append({
                 "ID":            element_id,
                 "Element":       name,
@@ -789,17 +863,28 @@ def _submit_to_supabase(elements_df: pd.DataFrame):
             for element_id, data in st.session_state.ars_rates.items():
                 has_cost = data.get("total_cost", 0) or 0
                 has_pct  = data.get("pct", 0) or 0
-                if not has_cost and not has_pct:
+                is_na    = bool(data.get("na"))
+                if not has_cost and not has_pct and not is_na:
                     continue
+
+                if is_na:
+                    # N/A: recorded for applicability tracking; rate 0 with
+                    # unit "N/A" — never published, skipped explicitly.
+                    rate_value = 0
+                    rate_unit  = "N/A"
+                elif data.get("rate_unit") == "%":
+                    rate_value = data["pct"]
+                    rate_unit  = "%"
+                else:
+                    rate_value = data.get("rate_m2") or 0
+                    rate_unit  = data.get("rate_unit", "£/m2")
 
                 _post("submitted_rates", {
                     "submission_id": submission_id,
                     "element_id":    element_id,
                     "package":       data.get("package", "Shell & Core"),
-                    # Store the calculated £/m² rate, or % for on costs
-                    "rate":          data["pct"] if data.get("rate_unit") == "%"
-                                     else (data.get("rate_m2") or 0),
-                    "rate_unit":     data.get("rate_unit", "£/m2"),
+                    "rate":          rate_value,
+                    "rate_unit":     rate_unit,
                     "quantity":      None,
                     "total_cost":    data.get("total_cost"),
                     "notes":         data.get("notes"),

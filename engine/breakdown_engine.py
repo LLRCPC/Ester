@@ -5,7 +5,7 @@ def calculate_cost_breakdown(
     *,
     db: dict,
     location: str,
-    quartile: str,
+    spec_level: str,
     element_areas_m2: dict,
 ) -> dict:
     """
@@ -17,8 +17,9 @@ def calculate_cost_breakdown(
         Loaded cost database (elements, quantity_rules, rates)
     location : str
         e.g. "London"
-    quartile : str
-        Internal key: Min, Low quart, Median, Upper quart, Max
+    spec_level : str
+        Rate band: Budget, Standard, High Spec, Bespoke.
+        (Stored in the database column still named "quartile".)
     element_areas_m2 : dict
         {element_id: area_m2} — all areas in canonical m²
 
@@ -41,7 +42,7 @@ def calculate_cost_breakdown(
                 r for r in db["rates"]
                 if r["element_id"] == element_id
                 and r["location"] == location
-                and r["quartile"] == quartile
+                and r["quartile"] == spec_level
             ),
             None,
         )
@@ -49,8 +50,8 @@ def calculate_cost_breakdown(
         if rate_row is None:
             raise ValueError(
                 f"No rate found for element '{element_id}' | "
-                f"location '{location}' | quartile '{quartile}'. "
-                f"Check your Excel rates sheet."
+                f"location '{location}' | spec level '{spec_level}'. "
+                f"Publish rates for this spec level from the admin pages."
             )
 
         result = calculate_element_cost(

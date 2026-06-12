@@ -153,6 +153,52 @@ def load_all_approved_rates(location: str, element_id: str) -> list:
 
 
 @st.cache_data(ttl=60)
+def load_applicability_stats() -> pd.DataFrame:
+    """
+    How often is each element applicable across ALL submissions?
+    An element 'answered' = a rate was entered OR it was marked N/A.
+    Applicability % = answered-with-rate / total answered.
+    """
+    rows = _get(
+        "submitted_rates",
+        "select=element_id,rate_unit,elements(element_name,category,sort_order)"
+    )
+    if not rows:
+        return pd.DataFrame()
+
+    stats: dict = {}
+    for r in rows:
+        eid = r["element_id"]
+        el  = r.get("elements") or {}
+        s = stats.setdefault(eid, {
+            "Element":    el.get("element_name", eid),
+            "Category":   el.get("category", "—"),
+            "sort_order": el.get("sort_order", 999),
+            "Answered":   0,
+            "N/A":        0,
+        })
+        s["Answered"] += 1
+        if r.get("rate_unit") == "N/A":
+            s["N/A"] += 1
+
+    out = []
+    for s in stats.values():
+        applicable = s["Answered"] - s["N/A"]
+        pct = (applicable / s["Answered"] * 100) if s["Answered"] else 0
+        out.append({
+            "Element":         s["Element"],
+            "Category":        s["Category"],
+            "Times answered":  s["Answered"],
+            "Times N/A":       s["N/A"],
+            "Applicability":   f"{pct:.0f}%",
+            "sort_order":      s["sort_order"],
+            "_pct":            pct,
+        })
+    df = pd.DataFrame(out).sort_values(["_pct", "sort_order"])
+    return df.drop(columns=["sort_order", "_pct"])
+
+
+@st.cache_data(ttl=60)
 def load_elements_lookup() -> dict:
     rows = _get("elements", "select=element_id,element_name,category,sort_order")
     return {r["element_id"]: r for r in rows}
@@ -292,6 +338,7 @@ def publish_submission(submission_id: str, submission: dict, rates_df: pd.DataFr
         replaced_keys   = set()   # (element_id, location) pairs being updated
         skipped_pct     = 0
         skipped_zero    = 0
+        skipped_na      = 0
 
         for _, rate_row in rates_df.iterrows():
             element_id = rate_row["element_id"]
@@ -300,6 +347,12 @@ def publish_submission(submission_id: str, submission: dict, rates_df: pd.DataFr
             # Skip % rates — not published to the rates table
             if rate_unit == "%":
                 skipped_pct += 1
+                continue
+
+            # Skip N/A rows — element not applicable to this project.
+            # Recorded in submitted_rates for applicability tracking only.
+            if rate_unit == "N/A":
+                skipped_na += 1
                 continue
 
             # Convert submitted rate to £/m2
@@ -376,7 +429,7 @@ def publish_submission(submission_id: str, submission: dict, rates_df: pd.DataFr
     # Clear caches so estimating engine picks up new rates immediately
     st.cache_data.clear()
 
-    return published_count, skipped_pct, skipped_zero, carried_count, new_rate_set_id
+    return published_count, skipped_pct, skipped_zero, skipped_na, carried_count, new_rate_set_id
 
 
 # ── Render helpers ────────────────────────────────────────────────────────────
@@ -437,7 +490,12 @@ def _render_submission_detail(submission_id: str, submission: dict):
     display_df   = rates_df[available].copy()
     display_df.columns = [c.replace("_", " ").title() for c in available]
 
-    if "Rate" in display_df.columns:
+    if "Rate" in display_df.columns and "Rate Unit" in display_df.columns:
+        display_df["Rate"] = [
+            "N/A" if u == "N/A" else (f"£{float(x):,.2f}" if x else "—")
+            for x, u in zip(display_df["Rate"], display_df["Rate Unit"])
+        ]
+    elif "Rate" in display_df.columns:
         display_df["Rate"] = display_df["Rate"].apply(
             lambda x: f"£{float(x):,.2f}" if x else "—"
         )
@@ -476,7 +534,7 @@ def _render_submission_detail(submission_id: str, submission: dict):
     preview_rows = []
     shown = 0
     for _, r in rates_df.iterrows():
-        if r.get("rate_unit") == "%" or shown >= 3:
+        if r.get("rate_unit") in ("%", "N/A") or shown >= 3:
             continue
         rate   = float(r["rate"])
         unit   = r.get("rate_unit", "£/m2")
@@ -521,7 +579,7 @@ def _render_submission_detail(submission_id: str, submission: dict):
             use_container_width=True,
         ):
             try:
-                count, skipped, skipped_zero, carried, new_id = publish_submission(
+                count, skipped, skipped_zero, skipped_na, carried, new_id = publish_submission(
                     submission_id, submission, rates_df, set_name
                 )
                 st.success(
@@ -529,6 +587,8 @@ def _render_submission_detail(submission_id: str, submission: dict):
                     f"{count} new rate rows written across 4 spec bands. "
                     f"{carried} existing rate rows carried forward. "
                     f"{skipped} percentage-based items skipped. "
+                    f"{skipped_na} marked N/A (not applicable — recorded for "
+                    f"applicability tracking). "
                     f"Rate set ID: `{new_id}`"
                 )
                 if skipped_zero:
@@ -600,6 +660,25 @@ def render():
         st.metric("Pending review", pending)
     with c3:
         st.metric("Published", approved)
+
+    # ── Element applicability tracker ────────────────────────────────────────
+    try:
+        applicability_df = load_applicability_stats()
+    except Exception:
+        applicability_df = pd.DataFrame()
+
+    if not applicability_df.empty:
+        with st.expander("📈 Element applicability — how often does each element occur?"):
+            st.markdown(
+                "<div style='font-size:0.8rem;color:#8a96a8;margin-bottom:0.75rem;'>"
+                "Based on all submissions to date. <b>Times N/A</b> counts projects "
+                "where the element was explicitly marked not applicable. Elements "
+                "are sorted with the least applicable first — these are your "
+                "rarely-occurring elements. The picture sharpens as more projects "
+                "are submitted.</div>",
+                unsafe_allow_html=True,
+            )
+            st.dataframe(applicability_df, use_container_width=True, hide_index=True)
 
     st.markdown("---")
 
