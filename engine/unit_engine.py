@@ -5,13 +5,21 @@ Centralised conversion logic for:
 - Area units (m2 <-> ft2)
 - Rate units (£/m2 <-> £/ft2)
 
-All internal calculations should use:
+All internal AREA calculations should use:
 - Area: m2
 - Rate: £/m2
+
+Phase 2 note:
+- "£/nr" (count) and "%" (on-cost) rates are NOT area-based, so they are
+  never converted. convert_rate() returns them unchanged if it ever sees
+  them, so a stray call can't crash the app.
 """
 
 # Conversion constants
 FT2_PER_M2 = 10.76391041671
+
+# Rate units that are not area-based and must never be converted
+NON_AREA_RATE_UNITS = {"£/nr", "%", "N/A"}
 
 
 # -------------------------------------------------
@@ -62,9 +70,16 @@ def gbp_per_m2_to_gbp_per_ft2(rate_m2: float) -> float:
 def convert_rate(rate: float, from_unit: str, to_unit: str) -> float:
     """
     Convert rates between £/m2 and £/ft2.
+
+    Count (£/nr) and percentage (%) rates are not area-based, so they are
+    returned unchanged — there is no meaningful per-area conversion for them.
     """
 
     if from_unit == to_unit:
+        return rate
+
+    # Never convert count or percentage rates — pass them straight through.
+    if from_unit in NON_AREA_RATE_UNITS or to_unit in NON_AREA_RATE_UNITS:
         return rate
 
     if from_unit == "£/ft2" and to_unit == "£/m2":
