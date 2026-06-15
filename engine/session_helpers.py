@@ -86,6 +86,16 @@ def new_project():
         "storeys_above":          0,
         "storeys_below":          0,
 
+        # Building geometry (new)
+        "floor_to_floor_m":       0.0,
+        "perimeter_m":            0.0,
+        "facade_area_m2":         0.0,
+        "roof_area_m2":           0.0,
+
+        # Building features (new)
+        "num_wc_cores":           0,
+        "num_lifts":              0,
+
         # Building extension page
         "ext_existing_storeys":   0,
         "ext_gia_per_floor_m2":   0.0,
