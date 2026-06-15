@@ -436,6 +436,24 @@ def _reset_password(email: str):
     except Exception:
         return False
 
+def _get_user_from_token(token: str):
+    """Verify an access token with Supabase and return the user dict, or None if invalid/expired."""
+    url, key = _supabase_creds()
+    try:
+        r = httpx.get(
+            f"{url}/auth/v1/user",
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {token}",
+            },
+            timeout=10,
+        )
+        if r.status_code == 200:
+            return r.json()
+    except Exception:
+        pass
+    return None
+
 # ── Session: initialise once ──────────────────────────────────────────────────
 if "initialised" not in st.session_state:
     st.session_state.update({
@@ -475,6 +493,27 @@ if "initialised" not in st.session_state:
         "ext_structural_storeys": 0,
     })
     st.session_state.initialised = True
+
+# ── Restore session from URL token (survives page refresh) ────────────────────
+# When a user refreshes the browser, Streamlit wipes session_state.
+# We store the token in the URL (?token=...) so we can silently re-verify
+# the user with Supabase and restore their login without asking for a password.
+if not st.session_state.authenticated:
+    stored_token = st.query_params.get("token", "")
+    if stored_token:
+        user = _get_user_from_token(stored_token)
+        if user:
+            user_id = user.get("id", "")
+            email   = user.get("email", "")
+            role    = _get_user_role(user_id, stored_token)
+            st.session_state.authenticated      = True
+            st.session_state.current_user_email = email
+            st.session_state.current_user_id    = user_id
+            st.session_state.current_user_role  = role
+            st.session_state.access_token       = stored_token
+        else:
+            # Token is expired or invalid — clear it from the URL
+            st.query_params.clear()
 
 # ═════════════════════════════════════════════════════════════════════════════
 # LOGIN GATE
@@ -534,6 +573,7 @@ if not st.session_state.authenticated:
                         st.session_state.current_user_id    = user_id
                         st.session_state.current_user_role  = role
                         st.session_state.access_token       = token
+                        st.query_params["token"] = token   # persist token in URL for refresh survival
                         st.rerun()
 
             st.markdown("---")
@@ -688,6 +728,7 @@ with st.sidebar:
         st.session_state.current_user_role  = "user"
         st.session_state.access_token       = ""
         st.session_state.page_idx           = 0
+        st.query_params.clear()             # remove token from URL on sign out
         st.rerun()
 
 # ── Step progress bar ─────────────────────────────────────────────────────────
