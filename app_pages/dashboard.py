@@ -20,7 +20,7 @@ def _restore_project(project_id: str):
     st.session_state.quartile         = resolve_spec(data.get("quartile", "Standard"))
     st.session_state.element_areas_m2 = data.get("element_areas_m2", {})
     st.session_state._last_total_cost  = data.get("total_cost", 0)
-    st.session_state.page_idx = 4   # Cost Breakdown is now page 4
+    st.session_state.page_idx = 5   # Cost Breakdown is page 5
 
 
 def render(db: dict):
@@ -80,7 +80,7 @@ def render(db: dict):
             saved   = proj["saved_at"][:10] if proj.get("saved_at") else ""
             st.markdown(f"""
             <div class="proj-card">
-                <div class="proj-title">{proj.get("project_name") or "Untitled"}</div>
+                <div class="proj-name">{proj.get("project_name") or "Untitled"}</div>
                 <div class="proj-meta">GIA: {gia_str} &nbsp;·&nbsp; Saved: {saved}</div>
             </div>
             """, unsafe_allow_html=True)
