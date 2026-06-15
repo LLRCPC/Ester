@@ -127,7 +127,8 @@ def _init_session():
     st.session_state.setdefault("ars_step",          1)
     st.session_state.setdefault("ars_project_saved", False)
     st.session_state.setdefault("ars_submission_id", None)
-    # {element_id: {total_cost, rate_m2, rate_unit, pct, package, notes}}
+    # {element_id: {total_cost, rate_m2, rate_unit, pct, package, notes,
+    #               override_area_m2 (optional — use element-specific area)}}
     st.session_state.setdefault("ars_rates",         {})
     st.session_state.setdefault("ars_unit",          "m²")
     # Project fields
@@ -542,20 +543,22 @@ def _render_cost_entry(elements_df: pd.DataFrame):
 
             else:
                 # ── Standard elements — total cost entry ──────────────────────
-                existing_cost = existing.get("total_cost", 0.0) or 0.0
-                is_na         = existing.get("na", False)
-                is_entered    = existing_cost > 0 or is_na
-                badge         = "✓ " if existing_cost > 0 else ("－ " if is_na else "")
+                existing_cost        = existing.get("total_cost", 0.0) or 0.0
+                existing_override_m2 = existing.get("override_area_m2") or 0.0
+                is_na                = existing.get("na", False)
+                is_entered           = existing_cost > 0 or is_na
+                badge                = "✓ " if existing_cost > 0 else ("－ " if is_na else "")
 
                 # Show calculated rate in expander header if entered
                 rate_hint = ""
                 if is_na:
                     rate_hint = " — N/A"
-                elif existing_cost > 0 and area_m2 > 0:
-                    rate_m2   = existing_cost / area_m2
-                    rate_hint = f" — £{rate_m2:,.2f}/m²"
                 elif existing_cost > 0:
-                    rate_hint = f" — £{existing_cost:,.0f} total"
+                    _eff_area = existing_override_m2 if existing_override_m2 > 0 else area_m2
+                    if _eff_area > 0:
+                        rate_hint = f" — £{existing_cost / _eff_area:,.2f}/m²"
+                    else:
+                        rate_hint = f" — £{existing_cost:,.0f} total"
 
                 basis_label = _area_basis_label(
                     category, gia_m2, nia_m2, unit
@@ -567,7 +570,7 @@ def _render_cost_entry(elements_df: pd.DataFrame):
                     # Show which area is being used
                     st.markdown(
                         f"<div style='font-size:0.75rem;color:#8a96a8;"
-                        f"margin-bottom:0.5rem;'>Rate basis: {basis_label}</div>",
+                        f"margin-bottom:0.5rem;'>Default rate basis: {basis_label}</div>",
                         unsafe_allow_html=True,
                     )
 
@@ -588,13 +591,14 @@ def _render_cost_entry(elements_df: pd.DataFrame):
                             key=f"ars_notes_{element_id}",
                         )
                         st.session_state.ars_rates[element_id] = {
-                            "na":         True,
-                            "total_cost": None,
-                            "rate_m2":    None,
-                            "rate_unit":  "N/A",
-                            "pct":        None,
-                            "package":    existing.get("package", PACKAGES[0]),
-                            "notes":      notes_val or None,
+                            "na":              True,
+                            "total_cost":      None,
+                            "rate_m2":         None,
+                            "rate_unit":       "N/A",
+                            "pct":             None,
+                            "package":         existing.get("package", PACKAGES[0]),
+                            "notes":           notes_val or None,
+                            "override_area_m2": None,
                         }
                     else:
                         c1, c2, c3 = st.columns([2, 2, 3])
@@ -628,42 +632,122 @@ def _render_cost_entry(elements_df: pd.DataFrame):
                                 label_visibility="collapsed",
                             )
 
+                        # ── Area override ─────────────────────────────────────
+                        use_override = st.checkbox(
+                            "📐 Override area — I know the exact size of this element from drawings",
+                            value=existing_override_m2 > 0,
+                            key=f"ars_override_chk_{element_id}",
+                            help=(
+                                "Use this when you know the precise floor area of this specific "
+                                "element (e.g. the reception is 200 m² from drawings). "
+                                "The rate will be calculated as: Total Cost ÷ Element Area "
+                                "instead of Total Cost ÷ whole building GIA/NIA."
+                            ),
+                        )
+
+                        override_area_m2 = 0.0
+                        if use_override:
+                            st.markdown(
+                                "<div style='background:#fff8e6;border-left:3px solid #c8a84b;"
+                                "padding:0.5rem 0.8rem;border-radius:0 4px 4px 0;"
+                                "font-size:0.82rem;color:#7a5c00;margin:0.4rem 0;'>"
+                                "⚠️ Override active — rate will use the element area below, "
+                                "not the whole building GIA/NIA."
+                                "</div>",
+                                unsafe_allow_html=True,
+                            )
+                            ov_col1, ov_col2 = st.columns([2, 3])
+                            with ov_col1:
+                                ov_unit = st.radio(
+                                    "Area unit",
+                                    ["m²", "ft²"],
+                                    horizontal=True,
+                                    key=f"ars_ov_unit_{element_id}",
+                                )
+                                if ov_unit == "ft²":
+                                    ov_display = existing_override_m2 * FT2_PER_M2 if existing_override_m2 > 0 else 0.0
+                                    ov_entered = st.number_input(
+                                        "Element area (ft²)",
+                                        min_value=0.0,
+                                        step=10.0,
+                                        format="%.0f",
+                                        value=float(ov_display),
+                                        key=f"ars_ov_area_{element_id}",
+                                    )
+                                    override_area_m2 = ov_entered / FT2_PER_M2
+                                    if ov_entered > 0:
+                                        st.caption(f"≈ {override_area_m2:,.1f} m²")
+                                else:
+                                    ov_entered = st.number_input(
+                                        "Element area (m²)",
+                                        min_value=0.0,
+                                        step=10.0,
+                                        format="%.1f",
+                                        value=float(existing_override_m2),
+                                        key=f"ars_ov_area_{element_id}",
+                                    )
+                                    override_area_m2 = ov_entered
+                                    if ov_entered > 0:
+                                        st.caption(f"≈ {ov_entered * FT2_PER_M2:,.0f} ft²")
+
+                        # ── Effective area for rate calculation ───────────────
+                        eff_area_m2  = override_area_m2 if (use_override and override_area_m2 > 0) else area_m2
+                        eff_basis_lbl = (
+                            f"element override ({override_area_m2:,.1f} m²)"
+                            if (use_override and override_area_m2 > 0)
+                            else basis
+                        )
+
                         # Calculate and display rate
                         if cost_val > 0:
-                            if area_m2 > 0:
-                                rate_m2 = cost_val / area_m2
+                            if eff_area_m2 > 0:
+                                rate_m2 = cost_val / eff_area_m2
                                 col_calc, _ = st.columns([2, 2])
                                 with col_calc:
+                                    override_badge = (
+                                        "<span style='background:#fff8e6;color:#c8a84b;"
+                                        "font-size:0.65rem;font-weight:700;padding:0.1rem 0.4rem;"
+                                        "border-radius:3px;margin-left:0.4rem;'>OVERRIDE</span>"
+                                        if (use_override and override_area_m2 > 0) else ""
+                                    )
                                     st.markdown(
                                         f"""<div style="background:#f5f4f0;
                                             border:1px solid #e4e0d8;border-radius:6px;
                                             padding:0.6rem 0.9rem;margin-top:0.25rem;">
                                             <div style="font-size:0.7rem;color:#8a96a8;
                                             text-transform:uppercase;letter-spacing:0.06em;">
-                                            Calculated rate</div>
+                                            Calculated rate{override_badge}</div>
                                             <div style="font-family:'DM Serif Display',serif;
                                             font-size:1.2rem;color:#0f1f3d;">
                                             £{rate_m2:,.2f} / m²</div>
                                             <div style="font-size:0.72rem;color:#8a96a8;">
-                                            £{cost_val:,.0f} ÷ {area_m2:,.0f} m² {basis}</div>
+                                            £{cost_val:,.0f} ÷ {eff_area_m2:,.1f} m²
+                                            ({eff_basis_lbl})</div>
                                         </div>""",
                                         unsafe_allow_html=True,
                                     )
                             else:
                                 rate_m2 = None
-                                st.warning(
-                                    f"⚠️ {basis} is 0 — rate cannot be calculated. "
-                                    f"Go back to Step 1 and enter the {basis}."
-                                )
+                                if use_override:
+                                    st.warning(
+                                        "⚠️ Enter the element area above to calculate the rate."
+                                    )
+                                else:
+                                    st.warning(
+                                        f"⚠️ {basis} is 0 — rate cannot be calculated. "
+                                        f"Go back to Step 1 and enter the {basis}, "
+                                        f"or use the area override above."
+                                    )
 
                             st.session_state.ars_rates[element_id] = {
-                                "na":         False,
-                                "total_cost": cost_val,
-                                "rate_m2":    rate_m2,
-                                "rate_unit":  "£/m2",
-                                "pct":        None,
-                                "package":    pkg_val,
-                                "notes":      notes_val or None,
+                                "na":               False,
+                                "total_cost":       cost_val,
+                                "rate_m2":          rate_m2,
+                                "rate_unit":        "£/m2",
+                                "pct":              None,
+                                "package":          pkg_val,
+                                "notes":            notes_val or None,
+                                "override_area_m2": override_area_m2 if (use_override and override_area_m2 > 0) else None,
                             }
                         elif element_id in st.session_state.ars_rates:
                             del st.session_state.ars_rates[element_id]
@@ -782,17 +866,24 @@ def _render_review(elements_df: pd.DataFrame):
                 "Notes":         data.get("notes") or "—",
             })
         else:
-            cost    = data.get("total_cost", 0) or 0
-            rate_m2 = data.get("rate_m2")
+            cost             = data.get("total_cost", 0) or 0
+            rate_m2          = data.get("rate_m2")
+            override_area_m2 = data.get("override_area_m2")
             total_cost += cost
+            if override_area_m2:
+                entry_str = f"£{cost:,.0f} ÷ {override_area_m2:,.1f} m² (override)"
+                basis_str = f"Override ({override_area_m2:,.1f} m²)"
+            else:
+                entry_str = f"£{cost:,.0f} ÷ {basis}"
+                basis_str = basis
             rows.append({
                 "ID":            element_id,
                 "Element":       name,
                 "Package":       data.get("package", "—"),
                 "Total Cost":    f"£{cost:,.0f}",
-                "Basis":         basis,
+                "Basis":         basis_str,
                 "Rate (£/m²)":   f"£{rate_m2:,.2f}" if rate_m2 else "⚠️ No area",
-                "Entry":         f"£{cost:,.0f} ÷ {basis}",
+                "Entry":         entry_str,
                 "Notes":         data.get("notes") or "—",
             })
 
@@ -885,9 +976,12 @@ def _submit_to_supabase(elements_df: pd.DataFrame):
                     "package":       data.get("package", "Shell & Core"),
                     "rate":          rate_value,
                     "rate_unit":     rate_unit,
-                    "quantity":      None,
+                    "quantity":      data.get("override_area_m2"),  # stores override area if used
                     "total_cost":    data.get("total_cost"),
-                    "notes":         data.get("notes"),
+                    "notes":         (
+                        f"[Area override: {data['override_area_m2']:,.1f} m²] "
+                        + (data.get("notes") or "")
+                    ).strip() if data.get("override_area_m2") else data.get("notes"),
                 })
 
         st.session_state.ars_submission_id = submission_id
