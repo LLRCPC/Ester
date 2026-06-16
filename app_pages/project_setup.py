@@ -572,6 +572,26 @@ def render():
                 unsafe_allow_html=True,
             )
 
+    # ── Snapshot: write all existing building values to protected ex_ keys ───
+    # These are read by Building Overview and Building Config.
+    # Writing every render ensures they're always current regardless of
+    # Streamlit widget re-render order when navigating between pages.
+    st.session_state["ex_project_name"]   = st.session_state.get("project_name", "")
+    st.session_state["ex_location"]       = st.session_state.get("location", "")
+    st.session_state["ex_building_type"]  = st.session_state.get("building_type", "Office")
+    st.session_state["ex_refurb_scope"]   = st.session_state.get("refurb_scope", "Full Strip Out")
+    st.session_state["ex_spec_level"]     = st.session_state.get("spec_level", "Standard")
+    st.session_state["ex_gia_m2"]         = st.session_state.get("gia_m2", 0.0)
+    st.session_state["ex_nia_m2"]         = st.session_state.get("nia_m2", 0.0)
+    st.session_state["ex_storeys_above"]  = st.session_state.get("storeys_above", 0)
+    st.session_state["ex_storeys_below"]  = st.session_state.get("storeys_below", 0)
+    st.session_state["ex_floor_to_floor"] = st.session_state.get("floor_to_floor_m", 0.0)
+    st.session_state["ex_perimeter_m"]    = st.session_state.get("perimeter_m", 0.0)
+    st.session_state["ex_facade_area_m2"] = st.session_state.get("facade_area_m2", 0.0)
+    st.session_state["ex_roof_area_m2"]   = st.session_state.get("roof_area_m2", 0.0)
+    st.session_state["ex_num_wc_cores"]   = st.session_state.get("num_wc_cores", 0)
+    st.session_state["ex_num_lifts"]      = st.session_state.get("num_lifts", 0)
+
     # ── Footer ────────────────────────────────────────────────────────────────
     st.markdown("---")
 

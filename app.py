@@ -324,12 +324,17 @@ p { line-height: 1.65; }
 /* ── Login card ────────────────────────────────────────────────────────── */
 .login-card {
     max-width: 400px;
-    margin: 6rem auto;
+    margin: 1.5rem auto;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 2.5rem 2rem;
+    padding: 2rem 2rem;
     box-shadow: var(--shadow-lg);
+}
+
+/* ── Login page: tighten the main container top padding ─────────────────── */
+.login-page .main .block-container {
+    padding-top: 0.5rem !important;
 }
 
 /* ── Download button ───────────────────────────────────────────────────── */
@@ -527,22 +532,23 @@ if not st.session_state.authenticated:
     <style>
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="collapsedControl"] { display: none !important; }
+    .main .block-container { padding-top: 1rem !important; padding-bottom: 1rem !important; }
     </style>
     """, unsafe_allow_html=True)
 
     logo_path = Path("assets/CPC_logo.png")
-    logo_col1, logo_col2, logo_col3 = st.columns([1, 1.2, 1])
+    logo_col1, logo_col2, logo_col3 = st.columns([1.5, 0.8, 1.5])
     with logo_col2:
         if logo_path.exists():
             st.image(str(logo_path), use_container_width=True)
 
     st.markdown(
-        "<h2 style='text-align:center;margin-bottom:0;'>Construction Project Configurator</h2>",
+        "<h2 style='text-align:center;margin-bottom:0;margin-top:0.25rem;font-size:1.4rem;'>Construction Project Configurator</h2>",
         unsafe_allow_html=True
     )
     st.markdown(
-        "<p style='text-align:center;font-size:0.85rem;"
-        "color:#8a96a8;letter-spacing:0.08em;text-transform:uppercase;'>"
+        "<p style='text-align:center;font-size:0.78rem;"
+        "color:#8a96a8;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:0.75rem;'>"
         "Cost Estimating Tool</p>",
         unsafe_allow_html=True
     )
@@ -573,21 +579,22 @@ if not st.session_state.authenticated:
                         st.session_state.current_user_id    = user_id
                         st.session_state.current_user_role  = role
                         st.session_state.access_token       = token
-                        st.query_params["token"] = token   # persist token in URL for refresh survival
+                        st.query_params["token"] = token
                         st.rerun()
 
             st.markdown("---")
-            forgot_email = st.text_input("Email for password reset", key="forgot_email",
-                                          placeholder="you@company.com")
-            if st.button("Send Password Reset Email", key="btn_reset"):
-                if forgot_email:
-                    ok = _reset_password(forgot_email.strip())
-                    if ok:
-                        st.success("✅ Reset email sent — check your inbox.")
+            with st.expander("Forgot your password?"):
+                forgot_email = st.text_input("Email for password reset", key="forgot_email",
+                                              placeholder="you@company.com")
+                if st.button("Send Password Reset Email", key="btn_reset"):
+                    if forgot_email:
+                        ok = _reset_password(forgot_email.strip())
+                        if ok:
+                            st.success("✅ Reset email sent — check your inbox.")
+                        else:
+                            st.error("Could not send reset email. Check the address.")
                     else:
-                        st.error("Could not send reset email. Check the address.")
-                else:
-                    st.warning("Enter your email above first.")
+                        st.warning("Enter your email above first.")
 
         with signup_tab:
             new_email = st.text_input("Email", key="signup_email", placeholder="you@company.com")
@@ -630,7 +637,7 @@ except (KeyError, ValueError) as e:
 
 # ── Page definitions ──────────────────────────────────────────────────────────
 # 8 pages total: 6 workflow + 2 admin (Rate Library hidden)
-PAGE_ICONS = ["🏠", "📋", "🏗️", "⚙️", "📊", "💾", "📥", "🚀"]
+PAGE_ICONS = ["🏠", "📋", "🏗️", "🔍", "⚙️", "📊", "💾", "📥", "🚀"]
 
 # ── Admin check ───────────────────────────────────────────────────────────────
 is_admin = st.session_state.get("current_user_role") == "admin"
@@ -672,13 +679,13 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Admins see all 8 pages; regular users see only the 6 workflow pages
+    # Admins see all 9 pages; regular users see only the 7 workflow pages
     if is_admin:
         nav_pages = list(PAGES)
         nav_icons = list(PAGE_ICONS)
     else:
-        nav_pages = list(PAGES[:6])
-        nav_icons = list(PAGE_ICONS[:6])
+        nav_pages = list(PAGES[:7])
+        nav_icons = list(PAGE_ICONS[:7])
 
     plain_labels = [f"{nav_icons[i]}  {nav_pages[i]}" for i in range(len(nav_pages))]
 
@@ -733,8 +740,8 @@ with st.sidebar:
 
 # ── Step progress bar ─────────────────────────────────────────────────────────
 def render_step_bar(current: int):
-    workflow_pages = PAGES[:6]
-    workflow_icons = PAGE_ICONS[:6]
+    workflow_pages = PAGES[:7]
+    workflow_icons = PAGE_ICONS[:7]
     html = '<div class="step-bar">'
     for i, name in enumerate(workflow_pages):
         cls = "done" if i < current else ("active" if i == current else "")
@@ -742,7 +749,7 @@ def render_step_bar(current: int):
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
-if st.session_state.page_idx < 6:
+if st.session_state.page_idx < 7:
     render_step_bar(st.session_state.page_idx)
 
 # ── Page routing ──────────────────────────────────────────────────────────────
@@ -755,14 +762,16 @@ elif idx == 1:
 elif idx == 2:
     from app_pages.building_extension import render; render()
 elif idx == 3:
-    from app_pages.elements import render; render(db)
+    from app_pages.building_overview import render; render()
 elif idx == 4:
-    from app_pages.breakdown import render; render(db)
+    from app_pages.elements import render; render(db)
 elif idx == 5:
+    from app_pages.breakdown import render; render(db)
+elif idx == 6:
     from app_pages.save_project import render; render(db)
-elif idx == 6 and is_admin:
-    from app_pages.admin_rate_submission import render; render()
 elif idx == 7 and is_admin:
+    from app_pages.admin_rate_submission import render; render()
+elif idx == 8 and is_admin:
     from app_pages.admin_publish_rates import render; render()
 else:
     st.warning("Page not found or access denied.")

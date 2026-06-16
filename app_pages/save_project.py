@@ -107,7 +107,7 @@ def render(db: dict):
     col_back, col_spacer2, col_dash = st.columns([1, 4, 1])
     with col_back:
         if st.button("← Breakdown", use_container_width=True):
-            st.session_state.page_idx = 4  # back to Cost Breakdown
+            st.session_state.page_idx = 5  # back to Cost Breakdown
             st.rerun()
     with col_dash:
         if st.button("🏠 Dashboard", use_container_width=True):

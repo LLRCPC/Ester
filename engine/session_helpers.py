@@ -8,12 +8,13 @@ Page index map:
   0  Dashboard
   1  Project Setup
   2  Building Configuration
-  3  Element Areas
-  4  Cost Breakdown
-  5  Save Project
+  3  Building Overview
+  4  Element Areas
+  5  Cost Breakdown
+  6  Save Project
   --- Admin only ---
-  6  Rate Submission
-  7  Publish Rates
+  7  Rate Submission
+  8  Publish Rates
 """
 
 import streamlit as st
@@ -43,6 +44,7 @@ WORKFLOW_PAGES = [
     "Dashboard",
     "Project Setup",
     "Building Configuration",
+    "Building Overview",
     "Element Areas",
     "Cost Breakdown",
     "Save Project",
@@ -77,10 +79,33 @@ def new_project():
         "quartile":               "Standard",   # holds the spec level (key name kept for saved-project compatibility)
         "fitout_scope":           "Whole building",
 
-        # Areas
+        # Areas — existing building (owned by Project Setup)
         "gia_m2":                 0.0,
         "nia_m2":                 0.0,
         "net_gross_pct":          0.0,
+
+        # Areas — proposed building (owned by Building Config)
+        "proposed_gia_m2":        0.0,
+        "proposed_nia_m2":        0.0,
+        "proposed_net_gross_pct": 0.0,
+
+        # Existing building snapshot (written by project_setup, read by overview/config)
+        'ex_project_name':   '',
+        'ex_location':       '',
+        'ex_building_type':  'Office',
+        'ex_refurb_scope':   'Full Strip Out',
+        'ex_spec_level':     'Standard',
+        'ex_gia_m2':         0.0,
+        'ex_nia_m2':         0.0,
+        'ex_storeys_above':  0,
+        'ex_storeys_below':  0,
+        'ex_floor_to_floor': 0.0,
+        'ex_perimeter_m':    0.0,
+        'ex_facade_area_m2': 0.0,
+        'ex_roof_area_m2':   0.0,
+        'ex_num_wc_cores':   0,
+        'ex_num_lifts':      0,
+
 
         # Storeys
         "storeys_above":          0,
