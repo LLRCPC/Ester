@@ -272,17 +272,26 @@ def render():
 
         col_type, col_scope = st.columns(2)
         with col_type:
+            _btype_val = st.session_state.building_type
+            if _btype_val not in BUILDING_TYPES:
+                _btype_val = "Office"
+                st.session_state.building_type = _btype_val
             st.selectbox(
                 "Existing Building Type",
                 BUILDING_TYPES,
-                index=BUILDING_TYPES.index(st.session_state.building_type),
+                index=BUILDING_TYPES.index(_btype_val),
                 key="building_type",
             )
         with col_scope:
+            # Safe index: if saved value not in list, default to Full Strip Out
+            _scope_val = st.session_state.refurb_scope
+            if _scope_val not in REFURB_SCOPES:
+                _scope_val = "Full Strip Out"
+                st.session_state.refurb_scope = _scope_val
             st.selectbox(
                 "Refurb Scope",
                 REFURB_SCOPES,
-                index=REFURB_SCOPES.index(st.session_state.refurb_scope),
+                index=REFURB_SCOPES.index(_scope_val),
                 key="refurb_scope",
             )
 
@@ -501,10 +510,14 @@ def render():
         st.subheader("Specification Level")
         st.caption("Sets the rate tier used throughout the estimate. Can be overridden per element later.")
 
+        _spec_val = st.session_state.spec_level
+        if _spec_val not in SPEC_LEVELS:
+            _spec_val = "Standard"
+            st.session_state.spec_level = _spec_val
         spec = st.radio(
             "Spec level",
             SPEC_LEVELS,
-            index=SPEC_LEVELS.index(st.session_state.spec_level),
+            index=SPEC_LEVELS.index(_spec_val),
             horizontal=True,
             key="spec_level",
             label_visibility="collapsed",
