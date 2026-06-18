@@ -37,6 +37,7 @@ REFURB_SCOPES = [
     "Shell Only",
     "Partial Strip Out",
     "Full Strip Out",
+    "Full Strip Out + New Floors",
     "New Build",
 ]
 
