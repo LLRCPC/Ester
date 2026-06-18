@@ -3,6 +3,7 @@ from engine.data_loader import load_cost_database, get_json_mtime
 from engine.session_helpers import new_project, PAGES
 import os
 import httpx
+from app_pages.feedback import render_feedback_widget, render_admin_feedback
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -58,7 +59,7 @@ p { line-height: 1.65; }
 /* ── Main content area ─────────────────────────────────────────────────── */
 .main .block-container {
     padding-top: 2rem !important;
-    padding-bottom: 3rem !important;
+    padding-bottom: 5rem !important;
     max-width: 1200px !important;
 }
 
@@ -500,9 +501,6 @@ if "initialised" not in st.session_state:
     st.session_state.initialised = True
 
 # ── Restore session from URL token (survives page refresh) ────────────────────
-# When a user refreshes the browser, Streamlit wipes session_state.
-# We store the token in the URL (?token=...) so we can silently re-verify
-# the user with Supabase and restore their login without asking for a password.
 if not st.session_state.authenticated:
     stored_token = st.query_params.get("token", "")
     if stored_token:
@@ -636,8 +634,8 @@ except (KeyError, ValueError) as e:
     st.stop()
 
 # ── Page definitions ──────────────────────────────────────────────────────────
-# 8 pages total: 6 workflow + 2 admin (Rate Library hidden)
-PAGE_ICONS = ["🏠", "📋", "🏗️", "🔍", "⚙️", "📊", "💾", "📥", "🚀"]
+# 10 pages total: 7 workflow + 3 admin (Rate Submission, Publish Rates, Feedback)
+PAGE_ICONS = ["🏠", "📋", "🏗️", "🔍", "⚙️", "📊", "💾", "📥", "🚀", "💬"]
 
 # ── Admin check ───────────────────────────────────────────────────────────────
 is_admin = st.session_state.get("current_user_role") == "admin"
@@ -679,7 +677,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Admins see all 9 pages; regular users see only the 7 workflow pages
+    # Admins see all 10 pages; regular users see only the 7 workflow pages
     if is_admin:
         nav_pages = list(PAGES)
         nav_icons = list(PAGE_ICONS)
@@ -694,8 +692,13 @@ with st.sidebar:
     if st.session_state.page_idx > max_idx:
         st.session_state.page_idx = 0
 
-    selected = st.radio("nav", plain_labels, index=st.session_state.page_idx,
-                        label_visibility="collapsed")
+    # Sidebar nav — always driven by page_idx so Next/Back buttons work correctly.
+    selected = st.radio(
+        "nav",
+        plain_labels,
+        index=st.session_state.page_idx,
+        label_visibility="collapsed",
+    )
     new_idx = plain_labels.index(selected)
     if new_idx != st.session_state.page_idx:
         st.session_state.page_idx = new_idx
@@ -773,5 +776,10 @@ elif idx == 7 and is_admin:
     from app_pages.admin_rate_submission import render; render()
 elif idx == 8 and is_admin:
     from app_pages.admin_publish_rates import render; render()
+elif idx == 9 and is_admin:
+    render_admin_feedback()
 else:
     st.warning("Page not found or access denied.")
+
+# ── Feedback widget (always visible during beta) ──────────────────────────────
+render_feedback_widget()

@@ -15,6 +15,7 @@ Page index map:
   --- Admin only ---
   7  Rate Submission
   8  Publish Rates
+  9  Feedback
 """
 
 import streamlit as st
@@ -54,6 +55,7 @@ WORKFLOW_PAGES = [
 ADMIN_PAGES = [
     "Rate Submission",
     "Publish Rates",
+    "Feedback",
 ]
 
 # Combined list — index matches page_idx
