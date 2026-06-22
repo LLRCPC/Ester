@@ -169,6 +169,11 @@ def render_feedback_widget():
         current_page_idx = st.session_state.get("page_idx", 0)
         current_page = PAGE_NAMES[current_page_idx] if current_page_idx < len(PAGE_NAMES) else "Unknown"
 
+        # If a reset was requested (from a previous submission), clear the key
+        # BEFORE the text area widget is drawn — Streamlit requires this ordering.
+        if st.session_state.pop("fb_reset_message", False):
+            st.session_state.pop("fb_message", None)
+
         fb_message = st.text_area(
             "Tell us what happened (or what you'd like to see)",
             placeholder="e.g. 'The GIA field reset when I clicked Next' or 'Would be great to see a cost/m² on the summary card'",
@@ -188,6 +193,31 @@ def render_feedback_widget():
                 unsafe_allow_html=True,
             )
 
+        # Show a persistent success banner if feedback was just submitted
+        if st.session_state.get("fb_just_submitted"):
+            st.markdown(
+                """
+                <div style="
+                    background:#e6f9f0;
+                    border:1.5px solid #2d6a4f;
+                    border-radius:8px;
+                    padding:0.75rem 1.1rem;
+                    margin-top:0.5rem;
+                    display:flex;
+                    align-items:center;
+                    gap:0.6rem;
+                    font-size:0.9rem;
+                    color:#1a4731;
+                    font-weight:500;
+                ">
+                    ✅ &nbsp;<strong>Feedback submitted — thanks!</strong>&nbsp;
+                    Your report has been sent to the team.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.session_state["fb_just_submitted"] = False
+
         if submit_clicked:
             if not fb_message.strip():
                 st.warning("Please write something before submitting.")
@@ -202,8 +232,9 @@ def render_feedback_widget():
                         "message":       fb_message.strip(),
                         "resolved":      False,
                     })
-                    st.success("✅ Thanks! Feedback submitted.")
-                    del st.session_state["fb_message"]
+                    # Signal that the next render should show the banner and reset the form
+                    st.session_state["fb_just_submitted"] = True
+                    st.session_state["fb_reset_message"] = True
                     st.rerun()
                 except Exception as e:
                     st.error(f"❌ Could not submit: {e}")
