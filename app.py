@@ -501,16 +501,23 @@ if "initialised" not in st.session_state:
     st.session_state.initialised = True
 
 # ── DEV BYPASS MODE ──────────────────────────────────────────────────────────
-# Only active when the DEV_MODE environment variable is set on your local machine.
-# Has zero effect on Streamlit Cloud — that environment never has DEV_MODE set.
+# Turns on automatically when running locally, and is OFF on Streamlit Cloud.
 #
-# To enable locally, run:  DEV_MODE=1 streamlit run app.py
-# Or on Windows CMD:       set DEV_MODE=1 && streamlit run app.py
-# Or on Windows PowerShell: $env:DEV_MODE="1"; streamlit run app.py
+# It activates if EITHER:
+#   (a) a file named ".dev_local" sits next to this app.py, OR
+#   (b) the DEV_MODE environment variable is set.
+#
+# ".dev_local" is git-ignored, so it only ever exists on your own machine and
+# can never be pushed to / exist on Streamlit Cloud. That means locally you can
+# just run  `streamlit run app.py`  and dev mode is always on, while the live
+# app still requires a proper login.
 #
 # A yellow banner appears at the top so you always know you're in dev mode.
 
-if os.environ.get("DEV_MODE"):
+_DEV_MARKER = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".dev_local")
+_DEV_ON = bool(os.environ.get("DEV_MODE")) or os.path.exists(_DEV_MARKER)
+
+if _DEV_ON:
     if not st.session_state.authenticated:
         st.session_state.update({
             "authenticated":          True,
@@ -544,7 +551,8 @@ if os.environ.get("DEV_MODE"):
         })
     st.warning(
         "⚠️ **DEV MODE** — login and project setup bypassed. "
-        "This banner only appears locally. Stop using `DEV_MODE=1` to return to normal.",
+        "This banner only appears locally. Delete the `.dev_local` file "
+        "(and unset `DEV_MODE`) to return to normal login.",
         icon="🛠️",
     )
 
