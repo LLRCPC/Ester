@@ -143,7 +143,8 @@ def _init_session():
     st.session_state.setdefault("ars_quick_rates", {})
 
 def _reset_form():
-    keys = [k for k in st.session_state.keys() if k.startswith("ars_")]
+    keys = [k for k in st.session_state.keys()
+            if k.startswith("ars_") or k.startswith("arq_")]
     for k in keys:
         del st.session_state[k]
     st.cache_data.clear()
@@ -835,6 +836,23 @@ def _render_quick_entry(elements_df: pd.DataFrame):
             "The Budget / High Spec / Bespoke bands are created automatically "
             "around it on the Publish Rates page.")
 
+    # ---- Area rate unit toggle (\u00a3/m\u00b2 or \u00a3/ft\u00b2) ----
+    # Only affects area (\u00a3/m\u00b2) elements. Count (\u00a3/nr) and On Cost (%)
+    # are unaffected. Whatever is typed is always stored internally as \u00a3/m\u00b2.
+    area_unit = st.radio(
+        "Area rate input unit", ["m\u00b2", "ft\u00b2"],
+        horizontal=True, key="arq_area_unit",
+        help="Switches the area-rate boxes between \u00a3/m\u00b2 and \u00a3/ft\u00b2. "
+             "ft\u00b2 entries are converted to \u00a3/m\u00b2 automatically. "
+             "Does not affect \u00a3/nr or % elements.")
+    if area_unit != st.session_state.get("arq_prev_area_unit"):
+        # Unit changed: clear the rate boxes so they redraw in the new unit,
+        # re-seeded from the stored \u00a3/m\u00b2 value. Must happen BEFORE the
+        # number_input widgets draw (Streamlit widgets stick to old values).
+        for _k in [k for k in st.session_state.keys() if k.startswith("arq_rate_")]:
+            del st.session_state[_k]
+        st.session_state.arq_prev_area_unit = area_unit
+
     # ---- Progress ----
     quick = st.session_state.ars_quick_rates
     entered = len([v for v in quick.values() if (v.get("rate") or 0) > 0])
@@ -867,12 +885,23 @@ def _render_quick_entry(elements_df: pd.DataFrame):
             existing = quick.get(element_id, {})
             existing_rate = float(existing.get("rate", 0.0) or 0.0)
 
+            is_area = el_type not in ("pct", "count")
+
             if el_type == "pct":
                 unit_label, rate_unit, step, fmt, maxv = "%", "%", 0.1, "%.2f", 100.0
             elif el_type == "count":
                 unit_label, rate_unit, step, fmt, maxv = "\u00a3/nr", "\u00a3/nr", 100.0, "%.0f", None
+            elif area_unit == "ft\u00b2":
+                unit_label, rate_unit, step, fmt, maxv = "\u00a3/ft\u00b2", "\u00a3/m2", 0.5, "%.2f", None
             else:
                 unit_label, rate_unit, step, fmt, maxv = "\u00a3/m\u00b2", "\u00a3/m2", 5.0, "%.2f", None
+
+            # Stored rate is ALWAYS canonical \u00a3/m\u00b2 (or \u00a3/nr, or %). When the
+            # area unit is ft\u00b2, show the box in \u00a3/ft\u00b2 but convert on the way in.
+            if is_area and area_unit == "ft\u00b2":
+                display_val = existing_rate / FT2_PER_M2 if existing_rate else 0.0
+            else:
+                display_val = existing_rate
 
             col_lbl, col_in = st.columns([3, 2])
             with col_lbl:
@@ -882,10 +911,16 @@ def _render_quick_entry(elements_df: pd.DataFrame):
                     f"{element_name}</div>", unsafe_allow_html=True)
             with col_in:
                 kwargs = dict(min_value=0.0, step=step, format=fmt,
-                              value=existing_rate, key=f"arq_rate_{element_id}")
+                              value=float(display_val), key=f"arq_rate_{element_id}")
                 if maxv is not None:
                     kwargs["max_value"] = maxv
-                rate_val = st.number_input(f"Rate ({unit_label})", **kwargs)
+                entered_val = st.number_input(f"Rate ({unit_label})", **kwargs)
+                if is_area and area_unit == "ft\u00b2":
+                    rate_val = entered_val * FT2_PER_M2   # \u00a3/ft\u00b2 -> canonical \u00a3/m\u00b2
+                    if entered_val > 0:
+                        st.caption(f"\u2248 \u00a3{rate_val:,.2f}/m\u00b2")
+                else:
+                    rate_val = entered_val
 
             if rate_val > 0:
                 pkg = "Both" if el_type == "pct" else st.session_state.ars_package
