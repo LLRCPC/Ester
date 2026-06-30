@@ -4,6 +4,18 @@ from engine.session_helpers import new_project, resolve_spec
 from engine.unit_engine import convert_area
 
 
+# Session-state keys belonging to a previously-open project that must NOT
+# leak into a newly-opened one. We wipe these before loading so that, e.g.,
+# a proposed GIA from an extension on the last project can't silently change
+# the £/m² figures of the project you're opening now.
+_LEAKABLE_KEYS = {
+    "proposed_gia_m2", "proposed_nia_m2", "proposed_net_gross_pct",
+    "has_extension", "ext_new_storeys", "ext_new_gia_m2", "ext_new_nia_m2",
+    "ext_lifts", "ext_stairs", "ext_roof_works", "ext_structural_storeys",
+    "ext_gia_per_floor_m2", "ext_nia_per_floor_m2", "_bc_svg", "_bc_unit",
+}
+
+
 def _restore_project(project_id: str):
     """Load a saved project into session state and jump to Breakdown."""
     try:
@@ -12,14 +24,28 @@ def _restore_project(project_id: str):
         st.error(f"Project '{project_id}' could not be found.")
         return
 
+    # 1) Clear leftovers from any previously-open project so nothing bleeds
+    #    across (this was the cause of wrong £/m² on reopened projects).
+    for k in _LEAKABLE_KEYS:
+        st.session_state.pop(k, None)
+
+    # 2) Core fields
     st.session_state.project_id       = data.get("project_id")
     st.session_state.project_name     = data.get("project_name", "")
     st.session_state.gia_m2           = data.get("gia_m2", 0.0)
     st.session_state.nia_m2           = data.get("nia_m2", 0.0)
     st.session_state.location         = data.get("location", "")
     st.session_state.quartile         = resolve_spec(data.get("quartile", "Standard"))
-    st.session_state.element_areas_m2 = data.get("element_areas_m2", {})
-    st.session_state._last_total_cost  = data.get("total_cost", 0)
+    st.session_state.element_areas_m2 = data.get("element_areas_m2", {}) or {}
+    st.session_state._last_total_cost = data.get("total_cost", 0)
+
+    # 3) Restore the extra config saved with the project (proposed areas,
+    #    extension details, etc.). Projects saved before this existed simply
+    #    have no meta and fall back to their existing areas.
+    meta = data.get("project_meta") or {}
+    for key, value in meta.items():
+        st.session_state[key] = value
+
     st.session_state.page_idx = 5   # Cost Breakdown is page 5
 
 

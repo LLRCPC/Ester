@@ -203,13 +203,17 @@ def render(db: dict):
                             format="%.1f",
                             key=pct_key,
                         )
-                        if pct > 0 and gia_m2 > 0:
+                        # Always reflect the entered percentage — including 0 —
+                        # so clearing the field correctly resets the area/cost
+                        # instead of leaving a stale value behind.
+                        if gia_m2 > 0:
                             calc_m2 = gia_m2 * (pct / 100)
                             st.session_state.element_areas_m2[element_id] = calc_m2
-                            st.caption(
-                                f"→ {calc_m2:,.0f} m² / "
-                                f"{convert_area(calc_m2, 'm2', 'ft2'):,.0f} ft²"
-                            )
+                            if calc_m2 > 0:
+                                st.caption(
+                                    f"→ {calc_m2:,.0f} m² / "
+                                    f"{convert_area(calc_m2, 'm2', 'ft2'):,.0f} ft²"
+                                )
 
                     else:
                         unit_key = f"{element_id}_unit"
@@ -295,7 +299,7 @@ def render(db: dict):
     col_back, col_spacer, col_next = st.columns([1, 4, 1])
 
     with col_back:
-        if st.button("← Building Config", use_container_width=True):
+        if st.button("← Building Overview", use_container_width=True):
             st.session_state.page_idx = 3  # back to Building Overview
             st.rerun()
 

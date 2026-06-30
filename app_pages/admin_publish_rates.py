@@ -450,10 +450,13 @@ def _render_submission_detail(submission_id: str, submission: dict):
             try:
                 count, pub_pct, pub_nr, skip_zero, skip_na, carried, new_id = publish_submission(
                     submission_id, submission, rates_df, set_name)
+                # Each element writes 4 rows (one per spec band), so divide by 4
+                # to report the real number of area elements published.
+                area_elements = max(0, (count - pub_pct * 4 - pub_nr * 4) // 4)
                 st.success(
                     f"✅ Published! {count} rate rows written across 4 spec bands. "
                     f"({pub_pct} on-cost, {pub_nr} count, "
-                    f"{count - pub_pct*4 - pub_nr*4} area elements). "
+                    f"{area_elements} area elements). "
                     f"{carried} existing rows carried forward. "
                     f"{skip_na} marked N/A. Rate set: `{new_id}`")
                 if skip_zero:

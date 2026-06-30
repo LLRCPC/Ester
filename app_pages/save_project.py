@@ -85,6 +85,29 @@ def render(db: dict):
             type="primary",
             use_container_width=True,
         ):
+            # Everything the cost engine doesn't strictly need, but which we
+            # want restored when the project is reopened. Without this, a
+            # project built with a vertical extension would lose its proposed
+            # areas on reload and the £/m² figures would no longer match.
+            project_meta = {
+                "proposed_gia_m2":        st.session_state.get("proposed_gia_m2", 0.0),
+                "proposed_nia_m2":        st.session_state.get("proposed_nia_m2", 0.0),
+                "proposed_net_gross_pct": st.session_state.get("proposed_net_gross_pct", 0.0),
+                "has_extension":          st.session_state.get("has_extension", False),
+                "ext_new_storeys":        st.session_state.get("ext_new_storeys", 0),
+                "ext_new_gia_m2":         st.session_state.get("ext_new_gia_m2", 0.0),
+                "ext_new_nia_m2":         st.session_state.get("ext_new_nia_m2", 0.0),
+                "ext_lifts":              st.session_state.get("ext_lifts", 0),
+                "ext_stairs":             st.session_state.get("ext_stairs", 0),
+                "ext_roof_works":         st.session_state.get("ext_roof_works", False),
+                "ext_structural_storeys": st.session_state.get("ext_structural_storeys", 0),
+                "storeys_above":          st.session_state.get("storeys_above", 0),
+                "storeys_below":          st.session_state.get("storeys_below", 0),
+                "spec_level":             st.session_state.get("spec_level", "Standard"),
+                "building_type":          st.session_state.get("building_type", "Office"),
+                "refurb_scope":           st.session_state.get("refurb_scope", "Full Strip Out"),
+            }
+
             project_data = {
                 "project_id":       st.session_state.project_id,
                 "project_name":     st.session_state.project_name,
@@ -95,6 +118,7 @@ def render(db: dict):
                 "quartile":         st.session_state.quartile,
                 "element_areas_m2": st.session_state.element_areas_m2,
                 "total_cost":       total_cost,
+                "project_meta":     project_meta,
             }
             project_id = save_project(project_data)
             st.session_state.project_id = project_id

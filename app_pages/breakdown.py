@@ -56,8 +56,21 @@ def render(db: dict):
     works_subtotal = result.get("works_subtotal", total_cost)
     elements       = result["elements"]
     on_costs       = result.get("on_costs", [])
+    missing_rates  = result.get("missing_rates", [])
 
     st.session_state["_last_total_cost"] = total_cost
+
+    # Elements you've given a quantity to but which have no published rate
+    # for this location + spec are left out of the total. Tell the user
+    # rather than silently dropping them (or crashing).
+    if missing_rates:
+        st.warning(
+            "⚠️ These element(s) have a quantity but no published rate for "
+            f"**{location} · {spec_level}**, so they are **not** included in "
+            "the total below: "
+            + ", ".join(missing_rates)
+            + ". Publish rates for them on the admin pages, then come back."
+        )
 
     # ── Unit toggle (controls the detail table below) ─
     col_toggle, col_spacer = st.columns([2, 6])

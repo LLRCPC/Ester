@@ -14,6 +14,7 @@ Two things in one file:
 """
 
 import os
+import html as html_mod
 from datetime import datetime, timezone
 
 import httpx
@@ -346,62 +347,63 @@ def render_admin_feedback():
 
         # Colour scheme: green border/bg if resolved, yellow if open
         if resolved:
-            border_color = "#2d6a4f"
-            bg_color     = "#f0faf5"
             badge_bg     = "#2d6a4f"
             badge_color  = "#ffffff"
             badge_text   = "✅ Resolved"
             btn_label    = "↩️  Mark as Open"
             btn_new_state = False
         else:
-            border_color = "#b8860b"
-            bg_color     = "#fffbea"
             badge_bg     = "#f0a500"
             badge_color  = "#ffffff"
             badge_text   = "🟡 Open"
             btn_label    = "✅  Mark as Resolved"
             btn_new_state = True
 
-        # Card HTML
-        st.markdown(
-            f"""
-            <div style="
-                background:{bg_color};
-                border:1.5px solid {border_color};
-                border-radius:8px;
-                padding:1rem 1.25rem 0.75rem;
-                margin-bottom:0.75rem;
-            ">
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem;">
-                    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
-                        <span style="background:{badge_bg};color:{badge_color};font-size:0.7rem;font-weight:700;
-                            letter-spacing:0.06em;text-transform:uppercase;padding:0.2rem 0.55rem;
-                            border-radius:4px;">{badge_text}</span>
-                        <span style="background:#0d1b36;color:#e8cc7a;font-size:0.7rem;font-weight:600;
-                            padding:0.2rem 0.55rem;border-radius:4px;">{fb_type}</span>
-                        {"<span style='background:#c0392b;color:#fff;font-size:0.7rem;font-weight:600;padding:0.2rem 0.55rem;border-radius:4px;'>" + severity + "</span>" if severity not in ("N/A", "nan") else ""}
-                    </div>
-                    <div style="font-size:0.75rem;color:#8a96a8;">
-                        {submitted_by} &nbsp;·&nbsp; {page} &nbsp;·&nbsp; {submitted_at}
-                    </div>
-                </div>
-                <div style="font-size:0.9rem;color:#0d1b36;line-height:1.6;">{message}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        # Card — rendered using st.container so user message text NEVER
+        # goes inside an unsafe_allow_html block. Even if the message
+        # contains raw HTML fragments, they can't break the page layout.
+        with st.container(border=True):
+            # ── Header: badges (system-controlled values only) ────────
+            severity_badge = ""
+            if severity not in ("N/A", "nan", "None", ""):
+                severity_badge = (
+                    f"<span style='background:#c0392b;color:#fff;font-size:0.7rem;"
+                    f"font-weight:600;padding:0.2rem 0.55rem;border-radius:4px;'>"
+                    f"{html_mod.escape(severity)}</span>"
+                )
+            st.markdown(
+                f"<div style='display:flex;justify-content:space-between;"
+                f"align-items:center;flex-wrap:wrap;gap:0.5rem;'>"
+                f"<div style='display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;'>"
+                f"<span style='background:{badge_bg};color:{badge_color};font-size:0.7rem;"
+                f"font-weight:700;letter-spacing:0.06em;text-transform:uppercase;"
+                f"padding:0.2rem 0.55rem;border-radius:4px;'>{badge_text}</span>"
+                f"<span style='background:#0d1b36;color:#e8cc7a;font-size:0.7rem;"
+                f"font-weight:600;padding:0.2rem 0.55rem;border-radius:4px;'>"
+                f"{html_mod.escape(fb_type)}</span>"
+                f"<span style='background:#1a4a9e;color:#fff;font-size:0.7rem;"
+                f"font-weight:600;letter-spacing:0.04em;padding:0.2rem 0.55rem;"
+                f"border-radius:4px;'>📄 {html_mod.escape(page)}</span>"
+                f"{severity_badge}"
+                f"</div>"
+                f"<div style='font-size:0.75rem;color:#8a96a8;'>"
+                f"{html_mod.escape(submitted_by)} · {submitted_at}"
+                f"</div></div>",
+                unsafe_allow_html=True,
+            )
 
-        # Resolve / re-open button sits just below each card
-        btn_key = f"fb_resolve_{row_id}"
-        if st.button(btn_label, key=btn_key):
-            try:
-                _set_resolved(row_id, btn_new_state)
-                st.cache_data.clear()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Could not update: {e}")
+            # ── Message: rendered through SAFE markdown (no unsafe HTML)
+            # so it can never break the page, no matter what's in it.
+            st.markdown(message)
 
-        st.markdown("<div style='height:0.25rem'></div>", unsafe_allow_html=True)
+            # ── Resolve / re-open button
+            if st.button(btn_label, key=f"fb_resolve_{row_id}"):
+                try:
+                    _set_resolved(row_id, btn_new_state)
+                    st.cache_data.clear()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Could not update: {e}")
 
     # ── CSV export ─────────────────────────────────────────────────────────────
     export_cols = [c for c in ["submitted_at", "submitted_by", "page", "type", "severity", "message", "resolved"] if c in view.columns]

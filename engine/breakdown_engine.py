@@ -1,6 +1,26 @@
 from engine.cost_engine import calculate_element_cost
 
 
+def _element_kind(element: dict) -> str:
+    """
+    Classify an element as 'on_cost', 'count' or 'area' using the element's
+    OWN columns (not the rate). This lets us decide what to do even when no
+    rate has been published yet for this element.
+
+    Mirrors the same logic used on the Element Areas page so the two pages
+    always agree about what each element is.
+    """
+    rate_unit = (element.get("default_rate_unit") or "").strip()
+    basis     = (element.get("area_basis") or "").strip().lower()
+    category  = (element.get("category") or "").strip().lower()
+
+    if rate_unit == "%" or category == "on costs":
+        return "on_cost"
+    if rate_unit == "£/nr" or basis == "nr":
+        return "count"
+    return "area"
+
+
 def calculate_cost_breakdown(
     *,
     db: dict,
@@ -11,7 +31,7 @@ def calculate_cost_breakdown(
     """
     Assemble the full cost breakdown.
 
-    Three kinds of element are recognised, by the rate's `rate_unit`:
+    Three kinds of element are recognised:
 
       • Area  (£/m2, £/ft2)  — costed as area × rate
       • Count (£/nr)         — costed as number × rate
@@ -22,27 +42,24 @@ def calculate_cost_breakdown(
     before it. The order is the elements' `sort_order`, so the database
     controls the sequence (e.g. Prelims → OH&P → Risk → Contingency).
 
-    Parameters
-    ----------
-    db : dict
-        Loaded cost database (elements, quantity_rules, rates)
-    location : str
-        e.g. "London"
-    spec_level : str
-        Rate band: Budget, Standard, High Spec, Bespoke.
-        (Stored in the database column still named "quartile".)
-    element_areas_m2 : dict
-        {element_id: value} — area in m² for area elements, a count for
-        count elements. On-cost elements take no entry.
+    IMPORTANT — missing rates no longer crash the estimate:
+      • A work element with a quantity of 0 is simply skipped — it adds
+        nothing to the cost, so it doesn't matter if it has no rate.
+      • A work element with a quantity but NO published rate is left out of
+        the total and its name is reported back in `missing_rates`, so the
+        Cost Breakdown page can warn the user instead of erroring.
+      • An on-cost (%) with no published rate is likewise skipped and
+        reported, rather than stopping the whole calculation.
 
     Returns
     -------
     dict
         {
             "elements":       [...work items (area + count)...],
-            "works_subtotal": float,   # construction works only
+            "works_subtotal": float,
             "on_costs":       [{element_id, element_name, pct, base, amount}, ...],
-            "total_cost":     float,   # grand total incl. on-costs
+            "total_cost":     float,
+            "missing_rates":  [element_name, ...],   # entered but un-priced
         }
     """
 
@@ -52,12 +69,14 @@ def calculate_cost_breakdown(
         key=lambda e: e.get("sort_order", 0),
     )
 
-    work_items   = []
-    on_cost_defs = []          # list of (element, pct) preserved in sort order
+    work_items     = []
+    on_cost_defs   = []        # list of (element, pct) preserved in sort order
+    missing_rates  = []        # names of entered elements with no rate
     works_subtotal = 0.0
 
     for element in elements_sorted:
         element_id = element["element_id"]
+        kind       = _element_kind(element)
 
         rate_row = next(
             (
@@ -69,18 +88,24 @@ def calculate_cost_breakdown(
             None,
         )
 
-        if rate_row is None:
-            raise ValueError(
-                f"No rate found for element '{element_id}' | "
-                f"location '{location}' | spec level '{spec_level}'. "
-                f"Publish rates for this spec level from the admin pages."
-            )
-
-        rate_unit = rate_row.get("rate_unit", "£/m2")
-
-        # On-costs are not works — collect them to apply after the subtotal.
-        if rate_unit == "%":
+        # ── On-costs (%) ──────────────────────────────────────────────────
+        if kind == "on_cost":
+            if rate_row is None:
+                missing_rates.append(element.get("element_name", element_id))
+                continue
             on_cost_defs.append((element, float(rate_row["rate"])))
+            continue
+
+        # ── Work elements (area or count) ─────────────────────────────────
+        quantity = element_areas_m2.get(element_id, 0.0) or 0.0
+
+        # Nothing entered → no cost, no rate needed.
+        if quantity <= 0:
+            continue
+
+        # Entered, but no rate published → leave out and flag it.
+        if rate_row is None:
+            missing_rates.append(element.get("element_name", element_id))
             continue
 
         result = calculate_element_cost(
@@ -112,4 +137,5 @@ def calculate_cost_breakdown(
         "works_subtotal": round(works_subtotal, 0),
         "on_costs":       on_costs,
         "total_cost":     round(running, 0),
+        "missing_rates":  missing_rates,
     }

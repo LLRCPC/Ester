@@ -70,8 +70,10 @@ CONTRACT_TYPES = ["Shell & Core", "Cat A Fit-Out",
 SPEC_LEVELS    = ["Budget", "Standard", "High Spec", "Bespoke"]
 PACKAGES       = ["Shell & Core", "Cat A Fit-Out"]
 
-NIA_CATEGORIES = {"Fit-Out", "Cat A Fit-Out"}
 PCT_CATEGORIES = {"On Costs"}
+
+# Only used as a fallback when an element's area_basis column is blank.
+NIA_CATEGORIES = {"Fit-Out", "Cat A Fit-Out"}
 
 # -- Element type helpers --
 
@@ -84,15 +86,30 @@ def _element_type(row) -> str:
         return "count"
     return "area"
 
-def _area_basis(category: str) -> str:
-    if category in PCT_CATEGORIES:
-        return "%"
-    if category in NIA_CATEGORIES:
-        return "NIA"
-    return "GIA"
+def _area_basis(row) -> str:
+    """
+    Decide GIA / NIA / % for an element.
 
-def _area_basis_label(category: str, gia_m2: float, nia_m2: float, unit: str) -> str:
-    basis = _area_basis(category)
+    The element's `area_basis` column is the single source of truth — the
+    very same column the user-facing Element Areas page uses to default Cat A
+    elements to NIA. This guarantees the rate that gets SUBMITTED (cost ÷ area)
+    sits on the same basis as the rate later APPLIED in the estimate, so the
+    two can never silently disagree. Category names are only a last-resort
+    fallback when the column is blank.
+    """
+    rate_unit = str(row.get("default_rate_unit") or "").strip()
+    category  = str(row.get("category") or "").strip()
+    basis_col = str(row.get("area_basis") or "").strip().upper()
+
+    if rate_unit == "%" or category in PCT_CATEGORIES:
+        return "%"
+    if basis_col == "NIA":
+        return "NIA"
+    if basis_col == "GIA":
+        return "GIA"
+    return "NIA" if category in NIA_CATEGORIES else "GIA"
+
+def _area_basis_label(basis: str, gia_m2: float, nia_m2: float, unit: str) -> str:
     if basis == "%":
         return "% of build cost"
     area_m2 = nia_m2 if basis == "NIA" else gia_m2
@@ -309,8 +326,9 @@ def _render_cost_entry(elements_df: pd.DataFrame):
         unsafe_allow_html=True)
 
     for category, cat_df in elements_df.groupby("category", sort=False):
-        basis = _area_basis(category)
-        area_m2 = nia_m2 if basis == "NIA" else gia_m2
+        # Representative basis for the category header badge only. The real,
+        # per-element basis is worked out inside the element loop below.
+        basis = _area_basis(cat_df.iloc[0]) if len(cat_df) > 0 else "GIA"
 
         cat_logged = sum(1 for _, row in cat_df.iterrows()
             if (st.session_state.ars_rates.get(row["element_id"], {}).get("total_cost") or 0) > 0
@@ -347,6 +365,11 @@ def _render_cost_entry(elements_df: pd.DataFrame):
             element_name = row["element_name"]
             existing = st.session_state.ars_rates.get(element_id, {})
             el_type = _element_type(row)
+            # Per-element basis (from the area_basis column) and the matching
+            # area to divide by. This is what keeps each element's rate on the
+            # correct GIA/NIA basis.
+            el_basis   = _area_basis(row)
+            el_area_m2 = nia_m2 if el_basis == "NIA" else gia_m2
 
             # == ON COSTS (%) ==
             if el_type == "pct":
@@ -455,10 +478,10 @@ def _render_cost_entry(elements_df: pd.DataFrame):
                 rate_hint = ""
                 if is_na: rate_hint = " — N/A"
                 elif existing_cost > 0:
-                    _eff = existing_override_m2 if existing_override_m2 > 0 else area_m2
+                    _eff = existing_override_m2 if existing_override_m2 > 0 else el_area_m2
                     rate_hint = f" — £{existing_cost/_eff:,.2f}/m²" if _eff > 0 else f" — £{existing_cost:,.0f} total"
 
-                basis_label = _area_basis_label(category, gia_m2, nia_m2, unit)
+                basis_label = _area_basis_label(el_basis, gia_m2, nia_m2, unit)
 
                 with st.expander(f"{badge}{element_id}  {element_name}{rate_hint}"):
                     st.markdown(
@@ -520,8 +543,8 @@ def _render_cost_entry(elements_df: pd.DataFrame):
                                     override_area_m2 = ov_entered
                                     if ov_entered > 0: st.caption(f"≈ {ov_entered*FT2_PER_M2:,.0f} ft²")
 
-                        eff_area_m2 = override_area_m2 if (use_override and override_area_m2 > 0) else area_m2
-                        eff_lbl = f"element override ({override_area_m2:,.1f} m²)" if (use_override and override_area_m2 > 0) else basis
+                        eff_area_m2 = override_area_m2 if (use_override and override_area_m2 > 0) else el_area_m2
+                        eff_lbl = f"element override ({override_area_m2:,.1f} m²)" if (use_override and override_area_m2 > 0) else el_basis
 
                         if cost_val > 0:
                             if eff_area_m2 > 0:
@@ -548,7 +571,7 @@ def _render_cost_entry(elements_df: pd.DataFrame):
                                 if use_override:
                                     st.warning("⚠️ Enter the element area above to calculate the rate.")
                                 else:
-                                    st.warning(f"⚠️ {basis} is 0 — go back to Step 1 or use override.")
+                                    st.warning(f"⚠️ {el_basis} is 0 — go back to Step 1 or use override.")
 
                             st.session_state.ars_rates[element_id] = {
                                 "na":False,"total_cost":cost_val,"rate_m2":rate_m2,
@@ -612,10 +635,13 @@ def _render_review(elements_df: pd.DataFrame):
     total_cost = 0.0
 
     for element_id, data in rates_data.items():
-        el = el_lookup.get(element_id, {})
-        category = el.get("category","—") if isinstance(el, dict) else "—"
-        name = el.get("element_name", element_id) if isinstance(el, dict) else element_id
-        basis = _area_basis(category)
+        el = el_lookup.get(element_id)
+        if el is not None:
+            category = el.get("category", "—")
+            name     = el.get("element_name", element_id)
+            basis    = _area_basis(el)
+        else:
+            category, name, basis = "—", element_id, "GIA"
 
         if data.get("na"):
             rows.append({"ID":element_id,"Element":name,"Total Cost":"—",

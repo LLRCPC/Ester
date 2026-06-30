@@ -1,5 +1,5 @@
 import streamlit as st
-from engine.data_loader import load_cost_database, get_json_mtime
+from engine.data_loader import load_cost_database
 from engine.session_helpers import new_project, PAGES
 import os
 import httpx
@@ -500,6 +500,54 @@ if "initialised" not in st.session_state:
     })
     st.session_state.initialised = True
 
+# ── DEV BYPASS MODE ──────────────────────────────────────────────────────────
+# Only active when the DEV_MODE environment variable is set on your local machine.
+# Has zero effect on Streamlit Cloud — that environment never has DEV_MODE set.
+#
+# To enable locally, run:  DEV_MODE=1 streamlit run app.py
+# Or on Windows CMD:       set DEV_MODE=1 && streamlit run app.py
+# Or on Windows PowerShell: $env:DEV_MODE="1"; streamlit run app.py
+#
+# A yellow banner appears at the top so you always know you're in dev mode.
+
+if os.environ.get("DEV_MODE"):
+    if not st.session_state.authenticated:
+        st.session_state.update({
+            "authenticated":          True,
+            "current_user_email":     "dev@cpcprojectservices.com",
+            "current_user_id":        "dev-bypass-user",
+            "current_user_role":      "admin",
+            "access_token":           "dev-bypass-token",
+            # Pre-filled project so pages like Elements and Cost Breakdown work
+            "project_name":           "DEV TEST — Office Refurb",
+            "location":               "London",
+            "postcode":               "EC2A 4NE",
+            "quartile":               "Standard",
+            "spec_level":             "Standard",
+            "building_type":          "Office",
+            "refurb_scope":           "Full Strip Out",
+            "gia_m2":                 2500.0,
+            "nia_m2":                 2000.0,
+            "net_gross_pct":          80.0,
+            "storeys_above":          5,
+            "storeys_below":          1,
+            "has_extension":          False,
+            "ext_new_storeys":        0,
+            "ext_gia_per_floor_m2":   0.0,
+            "ext_nia_per_floor_m2":   0.0,
+            "ext_new_gia_m2":         0.0,
+            "ext_new_nia_m2":         0.0,
+            "ext_lifts":              2,
+            "ext_stairs":             2,
+            "ext_roof_works":         False,
+            "ext_structural_storeys": 0,
+        })
+    st.warning(
+        "⚠️ **DEV MODE** — login and project setup bypassed. "
+        "This banner only appears locally. Stop using `DEV_MODE=1` to return to normal.",
+        icon="🛠️",
+    )
+
 # ── Restore session from URL token (survives page refresh) ────────────────────
 if not st.session_state.authenticated:
     stored_token = st.query_params.get("token", "")
@@ -620,12 +668,11 @@ if not st.session_state.authenticated:
 
 
 # ── Load DB ───────────────────────────────────────────────────────────────────
-@st.cache_data
-def load_db(mtime: float):
-    return load_cost_database()
-
+# load_cost_database() already caches its own result (ttl=300), and the admin
+# Publish page calls st.cache_data.clear() after publishing, so newly published
+# rates appear immediately. No extra wrapper is needed here.
 try:
-    db = load_db(get_json_mtime())
+    db = load_cost_database()
 except FileNotFoundError as e:
     st.error(f"**Cost database not found.**\n\n{e}")
     st.stop()
