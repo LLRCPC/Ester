@@ -139,6 +139,8 @@ def _init_session():
     st.session_state.setdefault("ars_cost_date", date.today())
     st.session_state.setdefault("ars_notes", "")
     st.session_state.setdefault("ars_submitted_by", "")
+    # -- Quick rate entry mode --
+    st.session_state.setdefault("ars_quick_rates", {})
 
 def _reset_form():
     keys = [k for k in st.session_state.keys() if k.startswith("ars_")]
@@ -781,6 +783,180 @@ def _render_success():
         if st.button("📤  Publish Rates →", use_container_width=True):
             st.session_state.page_idx = 8; st.rerun()
 
+# =====================================================================
+# QUICK RATE ENTRY MODE
+# Enter a known rate directly (no cost/area maths). The rate is always
+# anchored as the MEDIAN (Standard) so Publish Rates fans out the four
+# spec bands around it via its factor ladder. Saves to the SAME
+# submitted_projects / submitted_rates tables as the detailed flow.
+# =====================================================================
+
+def _render_quick_entry(elements_df: pd.DataFrame):
+    st.markdown("#### Quick Rate Entry")
+    st.markdown(
+        "<p style='color:#8a96a8;font-size:0.9rem;margin-top:-0.5rem;'>"
+        "Type rates you already know straight in \u2014 no cost plan needed. "
+        "Most elements take a <b>\u00a3/m\u00b2</b> rate, count items take "
+        "<b>\u00a3/nr</b>, and On Costs take a <b>%</b>. Each rate is treated "
+        "as the <b>median</b>; the spec bands are generated around it when you "
+        "publish. Leave anything you don't have blank.</p>",
+        unsafe_allow_html=True)
+
+    # ---- Compact header (one set of details for the whole batch) ----
+    c1, c2 = st.columns(2)
+    with c1:
+        st.session_state.ars_project_name = st.text_input(
+            "Source / Project Name *", value=st.session_state.ars_project_name,
+            placeholder="e.g. Benchmark set - Office", key="arq_name_input")
+        st.session_state.ars_location = st.selectbox(
+            "Location *", LOCATIONS,
+            index=LOCATIONS.index(st.session_state.ars_location),
+            key="arq_location_input")
+        st.session_state.ars_project_type = st.selectbox(
+            "Project Type", PROJECT_TYPES,
+            index=PROJECT_TYPES.index(st.session_state.ars_project_type),
+            key="arq_ptype_input")
+    with c2:
+        st.session_state.ars_package = st.selectbox(
+            "Package (applies to all rates below) *", PACKAGES,
+            index=PACKAGES.index(st.session_state.ars_package)
+            if st.session_state.ars_package in PACKAGES else 0,
+            key="arq_package_input")
+        st.session_state.ars_submitted_by = st.text_input(
+            "Your name", value=st.session_state.ars_submitted_by,
+            placeholder="e.g. J. Smith", key="arq_submitter_input")
+
+    st.session_state.ars_notes = st.text_area(
+        "Notes (optional)", value=st.session_state.ars_notes,
+        placeholder="Where these rates came from, date, assumptions...",
+        height=70, key="arq_notes_input")
+
+    st.info("\u2139\ufe0f Each rate is logged as the **median (Standard)**. "
+            "The Budget / High Spec / Bespoke bands are created automatically "
+            "around it on the Publish Rates page.")
+
+    # ---- Progress ----
+    quick = st.session_state.ars_quick_rates
+    entered = len([v for v in quick.values() if (v.get("rate") or 0) > 0])
+    total = len(elements_df)
+    st.markdown(
+        f"<div style='font-size:0.82rem;color:#8a96a8;margin:0.5rem 0 0.25rem;'>"
+        f"<b style='color:#0f1f3d;'>{entered}</b> of {total} rates entered</div>",
+        unsafe_allow_html=True)
+    st.progress(entered / total if total > 0 else 0)
+    st.markdown("---")
+
+    # ---- One input per element, grouped by category ----
+    for category, cat_df in elements_df.groupby("category", sort=False):
+        cat_entered = sum(
+            1 for _, row in cat_df.iterrows()
+            if (quick.get(row["element_id"], {}).get("rate") or 0) > 0)
+        st.markdown(
+            f'<div style="display:flex;justify-content:space-between;'
+            f'align-items:center;margin:1.2rem 0 0.4rem;">'
+            f'<span style="font-family:\'DM Serif Display\',serif;'
+            f'font-size:1.05rem;color:#0f1f3d;">{category}</span>'
+            f'<span style="font-size:0.75rem;color:#8a96a8;">'
+            f'{cat_entered}/{len(cat_df)} entered</span></div>',
+            unsafe_allow_html=True)
+
+        for _, row in cat_df.iterrows():
+            element_id = row["element_id"]
+            element_name = row["element_name"]
+            el_type = _element_type(row)
+            existing = quick.get(element_id, {})
+            existing_rate = float(existing.get("rate", 0.0) or 0.0)
+
+            if el_type == "pct":
+                unit_label, rate_unit, step, fmt, maxv = "%", "%", 0.1, "%.2f", 100.0
+            elif el_type == "count":
+                unit_label, rate_unit, step, fmt, maxv = "\u00a3/nr", "\u00a3/nr", 100.0, "%.0f", None
+            else:
+                unit_label, rate_unit, step, fmt, maxv = "\u00a3/m\u00b2", "\u00a3/m2", 5.0, "%.2f", None
+
+            col_lbl, col_in = st.columns([3, 2])
+            with col_lbl:
+                st.markdown(
+                    f"<div style='padding-top:0.55rem;font-size:0.88rem;color:#0f1f3d;'>"
+                    f"<span style='color:#b8c0cc;'>{element_id}</span>&nbsp;&nbsp;"
+                    f"{element_name}</div>", unsafe_allow_html=True)
+            with col_in:
+                kwargs = dict(min_value=0.0, step=step, format=fmt,
+                              value=existing_rate, key=f"arq_rate_{element_id}")
+                if maxv is not None:
+                    kwargs["max_value"] = maxv
+                rate_val = st.number_input(f"Rate ({unit_label})", **kwargs)
+
+            if rate_val > 0:
+                pkg = "Both" if el_type == "pct" else st.session_state.ars_package
+                quick[element_id] = {"rate": rate_val, "rate_unit": rate_unit,
+                                     "package": pkg}
+            elif element_id in quick:
+                del quick[element_id]
+
+    st.session_state.ars_quick_rates = quick
+
+    # ---- Submit ----
+    st.markdown("---")
+    can_submit = bool(
+        st.session_state.ars_project_name
+        and st.session_state.ars_location
+        and st.session_state.ars_package
+        and entered > 0)
+    if not can_submit:
+        st.warning("\u26a0\ufe0f Enter a source name, location, package and at least one rate.")
+
+    col_submit, _ = st.columns([1, 3])
+    with col_submit:
+        if st.button("\u2705  Submit Rates to Supabase", type="primary",
+                     disabled=not can_submit, use_container_width=True):
+            _submit_quick_to_supabase()
+
+
+def _submit_quick_to_supabase():
+    try:
+        with st.spinner("Submitting to Supabase..."):
+            project_row = _post("submitted_projects", {
+                "project_name":  st.session_state.ars_project_name,
+                "location":      st.session_state.ars_location,
+                "project_type":  st.session_state.ars_project_type,
+                "package":       st.session_state.ars_package,
+                "gia_m2":        None,
+                "nia_m2":        None,
+                "storeys_above": None,
+                "storeys_below": None,
+                "spec_level":    "Standard",  # anchor rate as the median
+                "cost_date":     str(st.session_state.ars_cost_date),
+                "notes":         (st.session_state.ars_notes
+                                  or "Quick rate entry") + " [quick entry]",
+                "submitted_by":  st.session_state.ars_submitted_by or None,
+                "status":        "pending",
+            })
+            submission_id = project_row["id"]
+
+            for element_id, data in st.session_state.ars_quick_rates.items():
+                rate_value = data.get("rate", 0) or 0
+                if rate_value <= 0:
+                    continue
+                _post("submitted_rates", {
+                    "submission_id": submission_id,
+                    "element_id":    element_id,
+                    "package":       data.get("package", "Shell & Core"),
+                    "rate":          rate_value,
+                    "rate_unit":     data.get("rate_unit", "\u00a3/m2"),
+                    "quantity":      None,
+                    "total_cost":    None,
+                    "notes":         "Entered as known median rate (quick entry)",
+                })
+
+        st.session_state.ars_submission_id = submission_id
+        st.session_state.ars_project_saved = True
+        st.rerun()
+    except Exception as e:
+        st.error(f"\u274c Submission failed: {e}")
+        st.caption("Check your Supabase credentials and try again.")
+
+
 # -- Main render --
 
 def render():
@@ -810,11 +986,19 @@ def render():
     if elements_df.empty:
         st.error("No elements found in Supabase."); return
 
-    _render_steps(st.session_state.ars_step)
+    mode = st.radio(
+        "Entry mode",
+        ["\U0001F4CB Detailed (cost \u2192 rate)", "\u26a1 Quick (rate per m\u00b2)"],
+        horizontal=True, key="ars_mode_toggle")
+    st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
 
-    if st.session_state.ars_step == 1: _render_project_details()
-    elif st.session_state.ars_step == 2: _render_cost_entry(elements_df)
-    elif st.session_state.ars_step == 3: _render_review(elements_df)
+    if "Quick" in mode:
+        _render_quick_entry(elements_df)
+    else:
+        _render_steps(st.session_state.ars_step)
+        if st.session_state.ars_step == 1: _render_project_details()
+        elif st.session_state.ars_step == 2: _render_cost_entry(elements_df)
+        elif st.session_state.ars_step == 3: _render_review(elements_df)
 
     st.markdown("---")
     st.caption("⚠️ Submitted rates are pending review and will not affect "
